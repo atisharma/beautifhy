@@ -1,0 +1,54 @@
+[build-system]
+requires = [
+  "setuptools>=64"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beautifhy"
+description = "A Hy pretty-printer / code formatter / beautifier."
+authors = [
+    {name = "Ati Sharma", email = "ati+beautifhy@agalmic.ltd"},
+]
+dynamic = ["version", "readme"]
+requires-python = ">=3.12"
+keywords = ["hy", "hylang", "utilities"]
+license = {file = "LICENSE"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Lisp",
+    "Programming Language :: Hy",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Utilities"
+]
+dependencies = [
+    "hy>=1.0.0",
+    "hyrule>=1.0.0",
+    "toolz",
+    "multimethod>=2.0"
+]
+
+[project.optional-dependencies]
+hylight = ["pygments"]
+
+[project.urls]
+Repository = "https://github.com/atisharma/beautifhy"
+
+[tool.setuptools.dynamic]
+readme = {file = "README.md", content-type = "text/markdown"}
+version = {attr = "beautifhy.__version__"}
+
+[tool.setuptools.package-data]
+"*" = ["*.hy"]
+
+[project.scripts]
+beautifhy = "beautifhy:__cli_grind_files"
+hylight = "beautifhy:__cli_hylight_files"
+
+# ... other project metadata fields as listed in:
+#     https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+
