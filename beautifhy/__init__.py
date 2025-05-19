@@ -7,7 +7,7 @@ import sys
 
 # set the package version
 # the major.minor version simply match the assumed Hy version
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __version_info__ = __version__.split(".")
 
 
