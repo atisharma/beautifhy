@@ -75,36 +75,6 @@ in principle, to reconstruct them.
                         "")}))
 
 
-(defn _extract-comments [form source]
-  "Comments are started by a ; and terminated by newlines.
-  Use the form's start and end position information to look before and
-  after the form for comments."
-  ;; FIXME : this could be fooled by `; ....` in the middle of a multi-line
-  ;; string preceding a form.
-  (let [source-lines (.split source "\n")
-        form-lines (cut source-lines (- form.start-line 1) form.end-line)
-        post-comment (.strip (.join "" (rest (.partition (last form-lines) ";"))))
-        lnum (- form.start-line 2)
-        indent (* " " form.start-column)
-        pre-comments []]
-    (while (and (>= lnum 0)
-                (or
-                  (.startswith (.strip (get source-lines lnum) ) ";")
-                  (= (.strip (get source-lines lnum) ) "")))
-      (pre-comments.append (.strip (get source-lines lnum)))
-      (-= lnum 1))
-    {"post_comment" (if post-comment
-                        (+ " " post-comment "\n")
-                        "")
-     "pre_comments" (if pre-comments
-                        (+ "\n"
-                           (.join ""
-                                  (lfor c (reversed pre-comments)
-                                        :if c
-                                        (+ indent c "\n"))))
-                        "")}))
-
-
 ;; * Tests whether a form is ready to render
 ;; -----------------------------------------
 
