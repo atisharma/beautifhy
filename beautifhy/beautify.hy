@@ -24,6 +24,7 @@ in principle, to reconstruct them.
 
 (import hyrule [inc dec flatten])
 (import beautifhy.core [slurp first second last])
+(import beautifhy.reader [HyReaderWithLineComments])
 (import itertools [batched]) ;; batched was introduced in python 3.12
 
 (import multimethod [DispatchError])
@@ -45,6 +46,36 @@ in principle, to reconstruct them.
 ;; -----------------------------------------
 
 (defn extract-comments [form source]
+  "Comments are started by a ; and terminated by newlines.
+  Use the form's start and end position information to look before and
+  after the form for comments."
+  ;; FIXME : post-comment is fooled by `; ....` in the middle of a multi-line
+  ;; string preceding a form.
+  (let [source-lines (.split source "\n")
+        form-lines (cut source-lines (- form.start-line 1) form.end-line)
+        post-comment (.strip (.join "" (rest (.partition (last form-lines) ";"))))
+        lnum (- form.start-line 2)
+        indent (* " " form.start-column)
+        pre-comments []]
+    (while (and (>= lnum 0)
+                (or
+                  (.startswith (.strip (get source-lines lnum) ) ";")
+                  (= (.strip (get source-lines lnum) ) "")))
+      (pre-comments.append (.strip (get source-lines lnum)))
+      (-= lnum 1))
+    {"post_comment" (if post-comment
+                        (+ " " post-comment "\n")
+                        "")
+     "pre_comments" (if pre-comments
+                        (+ "\n"
+                           (.join ""
+                                  (lfor c (reversed pre-comments)
+                                        :if c
+                                        (+ indent c "\n"))))
+                        "")}))
+
+
+(defn _extract-comments [form source]
   "Comments are started by a ; and terminated by newlines.
   Use the form's start and end position information to look before and
   after the form for comments."
@@ -274,9 +305,9 @@ in principle, to reconstruct them.
          (lfor expression forms
                (let [comments (extract-comments expression source)]
                  (+ (:pre-comments comments)
-                    (grind expression #** kwargs)
-                    (:post-comment comments))))))
-  
+                    (grind expression #** kwargs))))))
+                    ;(:post-comment comments)))))) ; ignore post-comments, because it's buggy
+
 (defmethod grind [#^ Expression forms * [indent-str ""] [size SIZE] #** kwargs] 
   "This method applies to Hy `Expression` objects
   which are parenthesized sequences of Hy forms."
