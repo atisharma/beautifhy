@@ -81,3 +81,5 @@ You can use stdin and pipe by replacing the filename with `-`:
 $ beautifhy core.hy | hylight -
 ```
 which will pretty-print `core.hy` and then syntax highlight the output.
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/atisharma/beautifhy)
