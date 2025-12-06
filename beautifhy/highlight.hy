@@ -2,16 +2,25 @@
 Utilities for code inspection and presentation.
 "
 
-(require beautifhy.core [defmethod])
+(require hyrule [unless])
 
+(import os)
+(import shutil)
 (import hyrule [pformat])
 
 (import pygments [highlight])
 (import pygments.lexers [get-lexer-by-name HyLexer PythonLexer PythonTracebackLexer guess-lexer])
 (import pygments.formatters [TerminalFormatter])
+(import pygments.styles [get-all-styles get-style-by-name])
 
 
-(defn hylight [s * [bg "light"] [language "hylang"]]
+;; Read environment variable for theme)
+(setv style-name (os.environ.get "HY_REPL_PYGMENTS_STYLE" "friendly"))
+(unless (in style-name (get-all-styles))
+    (setv style-name "friendly"))
+
+
+(defn hylight [s * [bg "dark"] [language "hylang"] [style style_name]]
   "Syntax highlight a Hy (or other language) string.
   Keyword `bg` is \"dark\" or \"light\".
 
@@ -19,10 +28,12 @@ Utilities for code inspection and presentation.
   (import beautifhy.highlight [hylight]
   (setv repl-output-fn hylight)
   in your .hyrc."
-  (let [formatter (TerminalFormatter :bg bg :stripall True)
+  (let [formatter (TerminalFormatter :style (get-style-by-name style-name)
+                                     :bg bg
+                                     :stripall True)
         term (shutil.get-terminal-size)
         lexer (get-lexer-by-name language)]
     (highlight (pformat s :indent 2 :width (- term.columns 5))
-               (HyLexer)
+               lexer
                formatter)))
 
