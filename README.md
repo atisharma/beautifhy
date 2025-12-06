@@ -82,4 +82,11 @@ $ beautifhy core.hy | hylight -
 ```
 which will pretty-print `core.hy` and then syntax highlight the output.
 
+
+To convert python code to Hy (using [py2hy](https://github.com/hylang/py2hy)), autoformat, then apply syntax highlighting, do
+```bash
+$ pip3 install py2hy
+$ python3 -m py2hy some_code.py | beautifhy - | hylight -
+```
+
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/atisharma/beautifhy)
