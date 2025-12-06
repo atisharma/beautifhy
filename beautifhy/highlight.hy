@@ -15,9 +15,9 @@ Utilities for code inspection and presentation.
 
 
 ;; Read environment variable for theme)
-(setv style-name (os.environ.get "HY_REPL_PYGMENTS_STYLE" "friendly"))
+(setv style-name (os.environ.get "HY_REPL_PYGMENTS_STYLE" "bw"))
 (unless (in style-name (get-all-styles))
-    (setv style-name "friendly"))
+    (setv style-name "default"))
 
 
 (defn hylight [s * [bg "dark"] [language "hylang"] [style style_name]]
