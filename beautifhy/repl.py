@@ -1,12 +1,13 @@
 """
-An enhanced REPL for the Hy language.
+An enhanced REPL for Hy.
 
 This module provides a feature-rich interactive console for Hy by
 extending ``hy.repl.REPL`` with ``prompt_toolkit`` and ``pygments``.
 It offers a significantly improved user experience over the standard
 REPL with syntax highlighting for input, output, and context-aware
 tracebacks that show the relevant source code.
-It also offers context-aware tab completion, integrating the standard
+
+It also offers context-aware tab completion, integrating the native
 Hy REPL's completer with ``prompt_toolkit``.
 
 The primary public class is :class:`REPL`, which can be instantiated and

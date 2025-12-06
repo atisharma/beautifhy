@@ -11,6 +11,12 @@ __version__ = "1.1.1"
 __version_info__ = __version__.split(".")
 
 
+def __cli_repl():
+    """A prettier hy REPL."""
+    from beautifhy.repl import REPL
+    console = REPL()
+    console.run()
+
 def __cli_grind_files():
     """Pretty-print hy files from the shell."""
     # The first arg is script name, ignore it.
