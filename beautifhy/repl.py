@@ -36,9 +36,10 @@ The REPL's behavior can be configured with the following environment variables:
 """
 
 import os
+import re
+import shutil
 import sys
 import traceback
-import shutil
 
 from code import InteractiveConsole
 from hy import mangle, repr, completer as hy_completer
@@ -69,9 +70,9 @@ history = FileHistory(history_file)
 # --- REPL syntax highlighting and completion ---
 
 # Read environment variable for theme
-style_name = os.environ.get("HY_REPL_PYGMENTS_STYLE", "friendly")
+style_name = os.environ.get("HY_REPL_PYGMENTS_STYLE", "bw")
 if style_name not in get_all_styles():
-    style_name = "friendly"  # fallback
+    style_name = "default"  # fallback
 
 # Convert Pygments style to prompt_toolkit style
 pt_style = style_from_pygments_cls(get_style_by_name(style_name))
@@ -82,15 +83,21 @@ class HyPTCompleter(Completer):
     def __init__(self, namespace=None):
         self.namespace = namespace or {}
         self.c = hy_completer.Completer(self.namespace)
+        # Hy symbols may use these chars
+        # but also others; this should be extended.
+        #self._pattern = re.compile(r"[A-Za-z0-9_.!?+\-*/=<>\:]+")  # keep '.' for attr
+        self._pattern = re.compile(r"[^()\[\]{}\"';`,~\\#\s]+")
 
     def get_completions(self, document, complete_event):
-        word = document.get_word_before_cursor()
+        # Update namespace reference as it may have changed
+        self.c.namespace = self.namespace
+        fragment = document.get_word_before_cursor(pattern=self._pattern)
         state = 0
         while True:
-            match = self.c.complete(word, state)
+            match = self.c.complete(fragment, state)
             if match is None:
                 break
-            yield Completion(match, start_position=-len(word))
+            yield Completion(match, start_position=-len(fragment))
             state += 1
 
 
@@ -158,6 +165,7 @@ class REPL(_REPL):
     A Hy REPL console that uses prompt_toolkit for input, instead of the
     builtin/readline's `input` function.
     """
+
     def __init__(self, locals=None, filename="<stdin>"):
         super().__init__(locals, filename)
         # Create the prompt session and store it in the instance
