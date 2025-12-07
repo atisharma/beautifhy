@@ -1,6 +1,6 @@
 ## 🦑 Beautifhy
 
-*A Hy beautifier / code formatter / pretty-printer.*
+*A Hy beautifier / code formatter / pretty-printer / enhanced REPL.*
 
 Probably compatible with Hy 1.0.0 and later.
 
@@ -11,14 +11,23 @@ Probably compatible with Hy 1.0.0 and later.
 $ pip install -U beautifhy
 ```
 
-If you want syntax highlighting available (which requires pygments), do instead
+
+### REPL
+
+Beautifhy comes with a REPL that implements multi-line editing, completion, input validation and live syntax highlighting.
 
 ```bash
-$ pip install -U beautifhy[hylight]
+$ hyrepl
 ```
 
+The behaviour of the repl may be modified with the following environment variables.
 
-### Usage
+- `HY_HISTORY`: Path to a file for storing command history. Defaults to `~/.hy-history`.
+- `HY_PYGMENTS_STYLE`: The name of a Pygments style to use for highlighting. Defaults to `bw`.
+- `HY_LIVE_COMPLETION`: If set, enables live/interactive autocompletion in a dropdown menu as you type.
+
+
+### Usage: pretty-printer and syntax highlighter
 
 From the command line, to pretty-print the file `core.hy`:
 ```bash

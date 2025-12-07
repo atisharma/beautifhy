@@ -10,7 +10,7 @@ tracebacks that show the relevant source code.
 It also offers context-aware tab completion, integrating the native
 Hy REPL's completer with ``prompt_toolkit``.
 
-The primary public class is :class:`REPL`, which can be instantiated and
+The primary public class is :class:`HyREPL`, which can be instantiated and
 used to start a custom interactive session.
 
 .. rubric:: Environment Variables
@@ -19,74 +19,80 @@ The REPL's behavior can be configured with the following environment variables:
 
 - ``HY_HISTORY``: Path to a file for storing command history. Defaults to
   ``~/.hy-history``.
-- ``HY_REPL_PYGMENTS_STYLE``: The name of a Pygments style to use for
+- ``HY_PYGMENTS_STYLE``: The name of a pygments style to use for
   highlighting. Defaults to ``friendly``.
 - ``HY_LIVE_COMPLETION``: If set, enables live/interactive autocompletion
   in a dropdown menu as you type.
 
 .. rubric:: Example
 
+.. code-block:: bash
+
+    $ hyrepl
+
 .. code-block:: python
 
-    from beautifhy.repl import REPL
+    from beautifhy.repl import HyREPL
 
     # Create and start the REPL
-    repl = REPL()
+    repl = HyREPL()
     repl.run()
 
 """
 
-import os
-import re
+import io, os, re, sys
 import shutil
-import sys
 import traceback
 
-from code import InteractiveConsole
 from hy import mangle, repr, completer as hy_completer
-from hy.repl import REPL as _REPL
 from hy.compat import PY3_12
+from hy.reader.exceptions import PrematureEndOfInput, LexException, HySyntaxError
+from hy.reader.hy_reader import HyReader
+from hy.repl import REPL as _REPL
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application.current import get_app
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.formatted_text import FormattedText, HTML
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.styles import style_from_pygments_cls
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.validation import Validator, ValidationError
 
-from pygments import highlight
+from pygments import highlight, lex
 from pygments.formatters import TerminalFormatter
 from pygments.lexers import HyLexer, PythonTracebackLexer, get_lexer_by_name
 from pygments.styles import get_style_by_name, get_all_styles
+from pygments.token import Token
+
 
 from beautifhy.highlight import hylight
 
 
-# --- Handle the REPL history ---
+# --- REPL history, persisted in a file --- #
 
-# Persistent REPL history in a file
 history_file = os.environ.get("HY_HISTORY", os.path.expanduser("~/.hy-history"))
 history = FileHistory(history_file)
 
 
-# --- REPL syntax highlighting and completion ---
+# --- REPL syntax highlighting and completion --- #
 
 # Read environment variable for theme
-style_name = os.environ.get("HY_REPL_PYGMENTS_STYLE", "bw")
+style_name = os.environ.get("HY_PYGMENTS_STYLE", "bw")
 if style_name not in get_all_styles():
     style_name = "default"  # fallback
 
-# Convert Pygments style to prompt_toolkit style
+# Convert pygments style to prompt_toolkit style
 pt_style = style_from_pygments_cls(get_style_by_name(style_name))
 
-class HyPTCompleter(Completer):
-    """Bridge prompt_toolkit's completion API with Hy's."""
+class HyCompleter(Completer):
+    """Wrap prompt_toolkit's completion API around Hy's."""
 
     def __init__(self, namespace=None):
         self.namespace = namespace or {}
         self.c = hy_completer.Completer(self.namespace)
-        # Hy symbols may use these chars
-        # but also others; this should be extended.
-        #self._pattern = re.compile(r"[A-Za-z0-9_.!?+\-*/=<>\:]+")  # keep '.' for attr
+        # Hy symbols may not use these chars (keep . for attr)
         self._pattern = re.compile(r"[^()\[\]{}\"';`,~\\#\s]+")
 
     def get_completions(self, document, complete_event):
@@ -102,9 +108,9 @@ class HyPTCompleter(Completer):
             state += 1
 
 
-# --- Traceback handling and highlighting ---
+# --- REPL traceback handling and highlighting --- #
 
-def set_last_exc(exc_info = None):
+def _set_last_exc(exc_info = None):
     """Setting `sys.last_exc`, or `sys.last_type` on earlier Pythons,
     makes it easier for the user to call the debugger."""
     # this is from the standard Hy REPL
@@ -159,26 +165,128 @@ def _exception_hook(exc_type, exc_value, tb, *, bg='dark', limit=5, lines_around
     return sys.stderr.write(highlight(''.join(fexc), PythonTracebackLexer(), exc_formatter))
 
 
-# --- The custom REPL ---
+# --- Syntax validation --- #
 
-class REPL(_REPL):
+def _expression_validation_exception(text: str):
+    if not text.strip():
+        # Whitespace is valid
+        return None
+    reader = HyReader()
+    stream = io.StringIO(text)
+    try:
+        for _ in reader.parse(stream):
+            pass
+    except PrematureEndOfInput:
+        return "PrematureEndOfInput"
+    except LexException:
+        return "LexException"
+    except HySyntaxError:
+        return "HySyntaxError"
+    return None
+
+def _expression_is_complete(text: str) -> bool:
     """
-    A Hy REPL console that uses prompt_toolkit for input, instead of the
-    builtin/readline's `input` function.
+    Return True if `src` contains any number of complete Hy forms.
+    Return False if the reader raises PrematureEndOfInput.
+    Treat other reader exceptions (LexException) as 'complete' so the REPL
+    can show the syntax error at evaluation time instead of forcing more lines.
+    """
+    if _expression_validation_exception(text) == "PrematureEndOfInput":
+        return False
+    # Treat a syntax error (LexError) as complete,
+    # so that the REPL handles the exception.
+    return True
+
+
+# --- Multiline input --- #
+
+def _indent_depth(text: str) -> str:
+    """
+    Guess indentation for the next line, using HyLexer.
+    Dedent when the last line closes parentheses/brackets/braces.
+    """
+    tokens = list(lex(text, HyLexer()))
+    depth = 0
+    for ttype, val in tokens:
+        # Ignore strings/comments
+        if ttype in Token.Literal.String or ttype in Token.Comment:
+            continue
+        # Increase/decrease depth for parens/brackets/braces
+        depth += val.count("(")
+        depth += val.count("[")
+        depth += val.count("{")
+        depth -= val.count(")")
+        depth -= val.count("]")
+        depth -= val.count("}")
+    
+    depth = max(depth, 0)
+    
+    # Optional dedent if last character closes a group
+    if text.rstrip() and text.rstrip()[-1] in ")]}":
+        depth -= 1
+
+    return max(depth, 0)
+
+# Key bindings: Enter accepts if complete, otherwise inserts newline.
+kb = KeyBindings()
+
+@kb.add("enter")
+def _(event):
+    """Enter accepts if complete, otherwise inserts newline."""
+    buf = event.app.current_buffer
+    text = buf.document.text
+
+    if _expression_is_complete(text):
+        buf.validate_and_handle()
+    else:
+        # Insert newline + smart indentation
+        indent = _indent_depth(text) * "  "
+        buf.insert_text("\n" + indent)
+
+
+# --- The custom REPL --- #
+
+class HyREPL(_REPL):
+    """
+    A subclass of :class:`hy.repl.REPL`, which is itself a subclass of
+    :class:`code.InteractiveConsole`, for Hy.
+
+    This Hy REPL console that uses prompt_toolkit for input, instead of
+    hy.REPL's builtin/readline `input` function.
+
+    The REPL's behavior can be configured with the following environment variables:
+
+    - ``HY_HISTORY``: Path to a file for storing command history. Defaults to
+      ``~/.hy-history``.
+    - ``HY_PYGMENTS_STYLE``: The name of a pygments style to use for
+      highlighting. Defaults to ``friendly``.
+    - ``HY_LIVE_COMPLETION``: If set, enables live/interactive autocompletion
+      in a dropdown menu as you type.
     """
 
-    def __init__(self, locals=None, filename="<stdin>"):
+    def __init__(self, locals=None, filename="<stdin>", status=None):
+
         super().__init__(locals, filename)
+
+        # default ps2 should be of same length as ps1
+        self.ps2 = self.ps2[:len(self.ps1)]
+
         # Create the prompt session and store it in the instance
         self.session = PromptSession(
             lexer=PygmentsLexer(HyLexer),
             history=history,
-            completer=HyPTCompleter(self.locals),
-            # Setting the HY_LIVE_COMPLETION env var will enable the ptk dropdown
+            completer=HyCompleter(self.locals),
             complete_while_typing=bool(os.environ.get("HY_LIVE_COMPLETION")),
+            bottom_toolbar=status,
+            message=self.ps1,
+            prompt_continuation=self.ps2,
+            rprompt=self.validation_text,
+            key_bindings=kb,
+            multiline=True,
             style=pt_style
         )
 
+        # override repr, otherwise keep super's choice, set by HYSTARTUP
         if self.output_fn is repr:
             self.output_fn = hylight
 
@@ -198,10 +306,22 @@ class REPL(_REPL):
         """
         # When `exc_info_override` is true, use a traceback that
         # doesn't have the REPL frames.
-        t, v, tb = set_last_exc(exc_info_override and self.locals.get("_hy_exc_info"))
+        t, v, tb = _set_last_exc(exc_info_override and self.locals.get("_hy_exc_info"))
         if exc_info_override:
             sys.last_type = self.locals.get('_hy_last_type', t)
             sys.last_value = self.locals.get('_hy_last_value', v)
             sys.last_traceback = self.locals.get('_hy_last_traceback', tb)
         _exception_hook(t, v, tb)
         self.locals[mangle("*e")] = v
+
+    def validation_text(self):
+        """Notify the user of any reader error for the current buffer contents."""
+        match _expression_validation_exception(self.session.app.current_buffer.text):
+            case "PrematureEndOfInput":
+                return FormattedText([('class:red', '*')])
+            case "LexException":
+                return FormattedText([('class:orange', '*')])
+            case "HySyntaxError":
+                return FormattedText([('class:yellow', '*')])
+        return FormattedText()
+

@@ -1,5 +1,5 @@
 """
-🦑 - beautifhy, a Hy code autoformatter / pretty-printer / code beautifier.
+🦑 - beautifhy, a Hy code autoformatter / pretty-printer / code beautifier / REPL.
 """
 
 import hy
@@ -7,14 +7,14 @@ import sys
 
 # set the package version
 # the major.minor version simply match the assumed Hy version
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 __version_info__ = __version__.split(".")
 
 
 def __cli_repl():
     """A prettier hy REPL."""
-    from beautifhy.repl import REPL
-    console = REPL()
+    from beautifhy.repl import HyREPL
+    console = HyREPL()
     console.run()
 
 def __cli_grind_files():
