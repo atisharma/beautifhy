@@ -103,9 +103,11 @@ $ python3 -m py2hy some_code.py | beautifhy - | hylight -
 The whole library uses [pygments](https://pygments.org/).
 `hy-repl` also uses [prompt-toolkit](https://python-prompt-toolkit.readthedocs.io/).
 Plus, of course, [Hy](https://hylang.org), whose REPL `hy-repl` extends.
+The autoformatter relies on polymorphic dispatch provided by [multimethod](https://coady.github.io/multimethod/).
 
 
 ### Docs
 
-I'm lazy, so try here:
+I'm lazy, so try clicking below.
+
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/atisharma/beautifhy)
