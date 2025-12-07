@@ -17,7 +17,7 @@ $ pip install -U beautifhy
 Beautifhy comes with a REPL that implements multi-line editing, completion, input validation and live syntax highlighting.
 
 ```bash
-$ hyrepl
+$ hy-repl
 ```
 
 The behaviour of the repl may be modified with the following environment variables.

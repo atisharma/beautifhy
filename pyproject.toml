@@ -53,7 +53,7 @@ version = {attr = "beautifhy.__version__"}
 [project.scripts]
 beautifhy = "beautifhy:__cli_grind_files"
 hylight = "beautifhy:__cli_hylight_files"
-hyrepl = "beautifhy:__cli_repl"
+hy-repl = "beautifhy:__cli_repl"
 
 # ... other project metadata fields as listed in:
 #     https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
