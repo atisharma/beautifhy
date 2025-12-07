@@ -79,9 +79,12 @@ history = FileHistory(history_file)
 # --- REPL syntax highlighting and completion --- #
 
 # Read environment variable for theme
-style_name = os.environ.get("HY_PYGMENTS_STYLE", "bw")
+style_name = os.environ.get("HY_PYGMENTS_STYLE", "lightbulb")
+bg = "dark" # default, usually fine
+if ':' in style_name:
+    style_name, bg = style_name.split(':', 1)
 if style_name not in get_all_styles():
-    style_name = "default"  # fallback
+    style_name = "lightbulb"  # fallback
 
 # Convert pygments style to prompt_toolkit style
 pt_style = style_from_pygments_cls(get_style_by_name(style_name))
@@ -137,7 +140,7 @@ def _read_file(filename):
     with open(filename, "r") as f:
         f.read()
 
-def _exception_hook(exc_type, exc_value, tb, *, bg='dark', limit=5, lines_around=2, linenos=True, ignore=[]):
+def _exception_hook(exc_type, exc_value, tb, *, bg=bg, limit=5, lines_around=2, linenos=True, ignore=[]):
     """Syntax highlighted traceback."""
     _tb = tb
     lang = None
@@ -318,10 +321,10 @@ class HyREPL(_REPL):
         """Notify the user of any reader error for the current buffer contents."""
         match _expression_validation_exception(self.session.app.current_buffer.text):
             case "PrematureEndOfInput":
-                return FormattedText([('class:red', '*')])
+                return FormattedText([('class:red', 'x')])
             case "LexException":
-                return FormattedText([('class:orange', '*')])
+                return FormattedText([('class:orange', 'x')])
             case "HySyntaxError":
-                return FormattedText([('class:yellow', '*')])
+                return FormattedText([('class:yellow', 'x')])
         return FormattedText()
 

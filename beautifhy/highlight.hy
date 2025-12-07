@@ -14,13 +14,16 @@ Utilities for code inspection and presentation.
 (import pygments.styles [get-all-styles get-style-by-name])
 
 
-;; Read environment variable for theme)
-(setv style-name (os.environ.get "HY_REPL_PYGMENTS_STYLE" "bw"))
+;; Read environment variable for theme
+(setv style-name (os.environ.get "HY_REPL_PYGMENTS_STYLE" "lightbulb"))
+(setv bg "dark") ; default dark
+(when (in ":" style_name)
+  (setv [style_name bg] (.split style-name ":" 1)))
 (unless (in style-name (get-all-styles))
-    (setv style-name "default"))
+    (setv style-name "lightbulb"))
 
 
-(defn hylight [s * [bg "dark"] [language "hylang"] [style style_name]]
+(defn hylight [s * [bg bg] [language "hylang"] [style style_name]]
   "Syntax highlight a Hy (or other language) string.
   Keyword `bg` is \"dark\" or \"light\".
 
