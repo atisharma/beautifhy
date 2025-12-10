@@ -11,7 +11,7 @@ Here we use 2 spaces for indentation (by default).
 There are a special cases about when not to break to the next line,
 to handle paired `cond`, `let` assignments, etc.
 
-Comments are discarded by the reader, so are lost.
+Comments are kept by HySafeReader, so are not lost.
 The Hy Expressions (forms) keep information about their original
 position (`f.start-column`, `f.start-line` etc.) so it is possible,
 in principle, to reconstruct them. 
@@ -24,7 +24,7 @@ in principle, to reconstruct them.
 
 (import hyrule [inc dec flatten])
 (import beautifhy.core [slurp first second last])
-(import beautifhy.reader [HyReaderWithLineComments])
+(import beautifhy.reader [HySafeReader Comment])
 (import itertools [batched]) ;; batched was introduced in python 3.12
 
 (import multimethod [DispatchError])
@@ -39,40 +39,7 @@ in principle, to reconstruct them.
                        ; (rendering \n as newlines)
 (setv INDENT_STR "  ") ; The indentation used to signify levels (two spaces).
 
-(setv Atom (| Complex FComponent FString Float Integer Keyword Symbol))
-
-
-;; * Process comments out-of-band
-;; -----------------------------------------
-
-(defn extract-comments [form source]
-  "Comments are started by a ; and terminated by newlines.
-  Use the form's start and end position information to look before and
-  after the form for comments."
-  ;; FIXME : post-comment is fooled by `; ....` in the middle of a multi-line
-  ;; string preceding a form.
-  (let [source-lines (.split source "\n")
-        form-lines (cut source-lines (- form.start-line 1) form.end-line)
-        post-comment (.strip (.join "" (rest (.partition (last form-lines) ";"))))
-        lnum (- form.start-line 2)
-        indent (* " " form.start-column)
-        pre-comments []]
-    (while (and (>= lnum 0)
-                (or
-                  (.startswith (.strip (get source-lines lnum) ) ";")
-                  (= (.strip (get source-lines lnum) ) "")))
-      (pre-comments.append (.strip (get source-lines lnum)))
-      (-= lnum 1))
-    {"post_comment" (if post-comment
-                        (+ " " post-comment "\n")
-                        "")
-     "pre_comments" (if pre-comments
-                        (+ "\n"
-                           (.join ""
-                                  (lfor c (reversed pre-comments)
-                                        :if c
-                                        (+ indent c "\n"))))
-                        "")}))
+(setv Atom (| Complex FComponent FString Float Integer Keyword Symbol Comment))
 
 
 ;; * Tests whether a form is ready to render
@@ -264,19 +231,16 @@ in principle, to reconstruct them.
 (defmethod grind [#^ str source * [size SIZE] #** kwargs]
   "A basic Hy pretty-printer.
 
-  This method is for a source-code string.
+  This is a top-level method for a source-code string.
   This is probably what you want to use."
-  (let [forms (read-many source :skip-shebang True)]
+  (let [forms (read-many source :skip-shebang True :reader (HySafeReader))]
     (grind forms :size size :source source #** kwargs)))
 
 (defmethod grind [#^ Lazy forms * source #** kwargs]
   "This method is for a lazy sequence of Hy forms."
   (.join "\n"
          (lfor expression forms
-               (let [comments (extract-comments expression source)]
-                 (+ (:pre-comments comments)
-                    (grind expression #** kwargs))))))
-                    ;(:post-comment comments)))))) ; ignore post-comments, because it's buggy
+           (grind expression #** kwargs))))
 
 (defmethod grind [#^ Expression forms * [indent-str ""] [size SIZE] #** kwargs] 
   "This method applies to Hy `Expression` objects
@@ -405,6 +369,12 @@ in principle, to reconstruct them.
   "This applies to atomic (non-sequence) Hy forms that are not overridden
   (as `String` is)."
   (_repr atom))
+
+(defmethod grind [#^ Comment comment #** kwargs]
+  "This applies to Comments."
+  ;; Because of the newline in the repr, the following atom will have lost a leading space.
+  (+ (_repr comment) " "))
+
 
 
 ;; * Sequences

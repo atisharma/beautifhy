@@ -23,6 +23,7 @@ The REPL's behavior can be configured with the following environment variables:
   highlighting. Defaults to ``friendly``.
 - ``HY_LIVE_COMPLETION``: If set, enables live/interactive autocompletion
   in a dropdown menu as you type.
+- ``HY_VI_MODE``: If set, enables vi mode in the REPL (default is emacs).
 
 .. rubric:: Example
 
@@ -45,9 +46,6 @@ import shutil
 import traceback
 
 from hy import mangle, repr, completer as hy_completer
-from hy.compat import PY3_12
-from hy.reader.exceptions import PrematureEndOfInput, LexException, HySyntaxError
-from hy.reader.hy_reader import HyReader
 from hy.repl import REPL as _REPL
 
 from prompt_toolkit import PromptSession
@@ -95,7 +93,7 @@ class HyCompleter(Completer):
     def __init__(self, namespace=None):
         self.namespace = namespace or {}
         self.c = hy_completer.Completer(self.namespace)
-        # Hy symbols may not use these chars (keep . for attr)
+        # Hy symbols may not use these chars (or ., but we keep that for attrs)
         self._pattern = re.compile(r"[^()\[\]{}\"';`,~\\#\s]+")
 
     def get_completions(self, document, complete_event):
@@ -118,10 +116,7 @@ def _set_last_exc(exc_info = None):
     makes it easier for the user to call the debugger."""
     # this is from the standard Hy REPL
     t, v, tb = exc_info or sys.exc_info()
-    if PY3_12:
-          sys.last_exc = v
-    else:
-          sys.last_type, sys.last_value, sys.last_traceback = t, v, tb
+    sys.last_type, sys.last_value, sys.last_traceback = t, v, tb
     return t, v, tb
 
 def _get_lang_from_filename(filename):
@@ -140,7 +135,7 @@ def _read_file(filename):
     with open(filename, "r") as f:
         f.read()
 
-def _exception_hook(exc_type, exc_value, tb, *, bg=bg, limit=5, lines_around=2, linenos=True, ignore=[]):
+def _output_traceback(exc_type, exc_value, tb, *, bg=bg, limit=5, lines_around=2, linenos=True, ignore=[]):
     """Syntax highlighted traceback."""
     _tb = tb
     lang = None
@@ -168,83 +163,43 @@ def _exception_hook(exc_type, exc_value, tb, *, bg=bg, limit=5, lines_around=2, 
     return sys.stderr.write(highlight(''.join(fexc), PythonTracebackLexer(), exc_formatter))
 
 
-# --- Syntax validation --- #
-
-def _expression_validation_exception(text: str):
-    if not text.strip():
-        # Whitespace is valid
-        return None
-    reader = HyReader()
-    stream = io.StringIO(text)
-    try:
-        for _ in reader.parse(stream):
-            pass
-    except PrematureEndOfInput:
-        return "PrematureEndOfInput"
-    except LexException:
-        return "LexException"
-    except HySyntaxError:
-        return "HySyntaxError"
-    return None
-
-def _expression_is_complete(text: str) -> bool:
-    """
-    Return True if `src` contains any number of complete Hy forms.
-    Return False if the reader raises PrematureEndOfInput.
-    Treat other reader exceptions (LexException) as 'complete' so the REPL
-    can show the syntax error at evaluation time instead of forcing more lines.
-    """
-    if _expression_validation_exception(text) == "PrematureEndOfInput":
-        return False
-    # Treat a syntax error (LexError) as complete,
-    # so that the REPL handles the exception.
-    return True
-
-
 # --- Multiline input --- #
 
-def _indent_depth(text: str) -> str:
+def _indent_depths(text: str) -> str:
     """
-    Guess indentation for the next line, using HyLexer.
-    Dedent when the last line closes parentheses/brackets/braces.
+    Calculate indentation for the next line, counting parens using HyLexer.
     """
     tokens = list(lex(text, HyLexer()))
-    depth = 0
+    depths = [0, 0, 0]   # parens, brackets, braces
     for ttype, val in tokens:
         # Ignore strings/comments
         if ttype in Token.Literal.String or ttype in Token.Comment:
             continue
         # Increase/decrease depth for parens/brackets/braces
-        depth += val.count("(")
-        depth += val.count("[")
-        depth += val.count("{")
-        depth -= val.count(")")
-        depth -= val.count("]")
-        depth -= val.count("}")
-    
-    depth = max(depth, 0)
-    
-    # Optional dedent if last character closes a group
-    if text.rstrip() and text.rstrip()[-1] in ")]}":
-        depth -= 1
-
-    return max(depth, 0)
+        depths[0] += val.count("(")
+        depths[0] -= val.count(")")
+        depths[1] += val.count("[")
+        depths[1] -= val.count("]")
+        depths[2] += val.count("{")
+        depths[2] -= val.count("}")
+    return depths
 
 # Key bindings: Enter accepts if complete, otherwise inserts newline.
 kb = KeyBindings()
 
 @kb.add("enter")
 def _(event):
-    """Enter accepts if complete, otherwise inserts newline."""
+    """Enter accepts if ([{}])s balance,
+    otherwise inserts newline."""
     buf = event.app.current_buffer
     text = buf.document.text
 
-    if _expression_is_complete(text):
-        buf.validate_and_handle()
-    else:
+    if any(_indent_depths(text)):
         # Insert newline + smart indentation
-        indent = _indent_depth(text) * "  "
+        indent = max(0, sum(_indent_depths(text))) * "  "
         buf.insert_text("\n" + indent)
+    else:
+        buf.validate_and_handle()
 
 
 # --- The custom REPL --- #
@@ -280,11 +235,12 @@ class HyREPL(_REPL):
             history=history,
             completer=HyCompleter(self.locals),
             complete_while_typing=bool(os.environ.get("HY_LIVE_COMPLETION")),
+            vi_mode=bool(os.environ.get("HY_VI_MODE", False)),
             bottom_toolbar=status,
-            message=self.ps1,
-            prompt_continuation=self.ps2,
             rprompt=self.validation_text,
             key_bindings=kb,
+            message=self.ps1,
+            prompt_continuation=self.ps2,
             multiline=True,
             style=pt_style
         )
@@ -314,17 +270,13 @@ class HyREPL(_REPL):
             sys.last_type = self.locals.get('_hy_last_type', t)
             sys.last_value = self.locals.get('_hy_last_value', v)
             sys.last_traceback = self.locals.get('_hy_last_traceback', tb)
-        _exception_hook(t, v, tb)
+        _output_traceback(t, v, tb)
         self.locals[mangle("*e")] = v
 
     def validation_text(self):
-        """Notify the user of any reader error for the current buffer contents."""
-        match _expression_validation_exception(self.session.app.current_buffer.text):
-            case "PrematureEndOfInput":
-                return FormattedText([('class:red', 'x')])
-            case "LexException":
-                return FormattedText([('class:orange', 'x')])
-            case "HySyntaxError":
-                return FormattedText([('class:yellow', 'x')])
-        return FormattedText()
+        """Return a red 'x' if parentheses don't balance."""
+        if any(_indent_depths(self.session.app.current_buffer.text)):
+            return FormattedText([('class:red', 'x')])
+        else:
+            return FormattedText()
 

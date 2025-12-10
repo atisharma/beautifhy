@@ -25,12 +25,9 @@ Utilities for code inspection and presentation.
 
 (defn hylight [s * [bg bg] [language "hylang"] [style style_name]]
   "Syntax highlight a Hy (or other language) string.
-  Keyword `bg` is \"dark\" or \"light\".
 
-  This is nice for use in the repl - put
-  (import beautifhy.highlight [hylight]
-  (setv repl-output-fn hylight)
-  in your .hyrc."
+  Keyword `bg` is \"dark\" or \"light\".
+  This is used as `repl-output-fn` in `hy-repl`."
   (let [formatter (TerminalFormatter :style (get-style-by-name style-name)
                                      :bg bg
                                      :stripall True)
