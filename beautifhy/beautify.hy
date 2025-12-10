@@ -11,7 +11,7 @@ Here we use 2 spaces for indentation (by default).
 There are a special cases about when not to break to the next line,
 to handle paired `cond`, `let` assignments, etc.
 
-Comments are kept by HySafeReader, so are not lost.
+Comments are kept by HyReaderWithComments, so are not lost.
 The Hy Expressions (forms) keep information about their original
 position (`f.start-column`, `f.start-line` etc.) so it is possible,
 in principle, to reconstruct them. 
@@ -24,7 +24,7 @@ in principle, to reconstruct them.
 
 (import hyrule [inc dec flatten])
 (import beautifhy.core [slurp first second last])
-(import beautifhy.reader [HySafeReader Comment])
+(import beautifhy.reader [HyReaderWithComments Comment])
 (import itertools [batched]) ;; batched was introduced in python 3.12
 
 (import multimethod [DispatchError])
@@ -233,7 +233,9 @@ in principle, to reconstruct them.
 
   This is a top-level method for a source-code string.
   This is probably what you want to use."
-  (let [forms (read-many source :skip-shebang True :reader (HySafeReader))]
+  (let [forms (read-many source
+                         :skip-shebang True
+                         :reader (HyReaderWithComments :use-current-readers False))]
     (grind forms :size size :source source #** kwargs)))
 
 (defmethod grind [#^ Lazy forms * source #** kwargs]
