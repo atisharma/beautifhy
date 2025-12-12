@@ -51,7 +51,7 @@ from hy.repl import REPL as _REPL
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application.current import get_app
 from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.formatted_text import FormattedText, HTML
+from prompt_toolkit.formatted_text import FormattedText, ANSI, HTML
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.lexers import PygmentsLexer
@@ -237,10 +237,10 @@ class HyREPL(_REPL):
             complete_while_typing=bool(os.environ.get("HY_LIVE_COMPLETION")),
             vi_mode=bool(os.environ.get("HY_VI_MODE", False)),
             bottom_toolbar=status,
-            rprompt=self.validation_text,
+            rprompt=self._validation_text,
             key_bindings=kb,
-            message=self.ps1,
-            prompt_continuation=self.ps2,
+            message=ANSI(self.ps1),
+            prompt_continuation=ANSI(self.ps2),
             multiline=True,
             style=pt_style
         )
@@ -254,7 +254,7 @@ class HyREPL(_REPL):
         Override the default raw_input to use our prompt_toolkit session.
         """
         try:
-            return self.session.prompt(prompt)
+            return self.session.prompt()
         except EOFError:
             # Raise clean exit to base class's interact() loop
             raise SystemExit
@@ -273,7 +273,7 @@ class HyREPL(_REPL):
         _output_traceback(t, v, tb)
         self.locals[mangle("*e")] = v
 
-    def validation_text(self):
+    def _validation_text(self):
         """Return a red 'x' if parentheses don't balance."""
         if any(_indent_depths(self.session.app.current_buffer.text)):
             return FormattedText([('class:red', 'x')])
