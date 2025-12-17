@@ -41,12 +41,12 @@ The REPL's behavior can be configured with the following environment variables:
 
 """
 
-import io, os, re, sys
+import asyncio, builtins, io, os, re, sys, time
 import shutil
 import traceback
 
 from hy import mangle, repr, completer as hy_completer
-from hy.repl import REPL as _REPL
+import hy.repl
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application.current import get_app
@@ -57,6 +57,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.styles import style_from_pygments_cls
 from prompt_toolkit.validation import Validator, ValidationError
+from prompt_toolkit.patch_stdout import patch_stdout
 
 from pygments import highlight, lex
 from pygments.formatters import TerminalFormatter
@@ -64,8 +65,14 @@ from pygments.lexers import HyLexer, PythonTracebackLexer, get_lexer_by_name
 from pygments.styles import get_style_by_name, get_all_styles
 from pygments.token import Token
 
-
 from beautifhy.highlight import hylight
+
+try:
+    import matplotlib.pyplot as pyplot
+    import matplotlib._pylab_helpers as mpl_helpers
+    HAS_MPL = True
+except ModuleNotFoundError:
+    HAS_MPL = False
 
 
 # --- REPL history, persisted in a file --- #
@@ -204,7 +211,7 @@ def _(event):
 
 # --- The custom REPL --- #
 
-class HyREPL(_REPL):
+class HyREPL(hy.repl.REPL):
     """
     A subclass of :class:`hy.repl.REPL`, which is itself a subclass of
     :class:`code.InteractiveConsole`, for Hy.
@@ -249,12 +256,18 @@ class HyREPL(_REPL):
         if self.output_fn is repr:
             self.output_fn = hylight
 
-    def raw_input(self, prompt=""):
-        """
-        Override the default raw_input to use our prompt_toolkit session.
-        """
+        if HAS_MPL:
+            pyplot.ion() # Enable interactive mode by default
+            self.pyplot = pyplot
+            self.locals['pyplot'] = pyplot # add pyplot instance to the REPL namespace too
+        else:
+            self.pyplot = None
+
+    async def get_input(self):
+        """Override the default raw_input to use our prompt_toolkit session."""
         try:
-            return self.session.prompt()
+            with patch_stdout():
+                return await self.session.prompt_async()
         except EOFError:
             # Raise clean exit to base class's interact() loop
             raise SystemExit
@@ -280,3 +293,104 @@ class HyREPL(_REPL):
         else:
             return FormattedText()
 
+    async def _update_plots(self):
+        """
+        Callback to update Matplotlib plots (or other supported GUI).
+        """
+
+        if not self.pyplot or not self.pyplot.isinteractive():
+            return
+
+        while True:
+            await asyncio.sleep(0.01)
+            try:
+                for fig_manager in mpl_helpers.Gcf.get_all_fig_managers():
+                    if fig_manager.canvas.figure.stale:
+                        fig_manager.canvas.draw_idle()
+                    fig_manager.canvas.flush_events()
+            except Exception as e:
+                sys.stderr.write(repr(e))
+
+    def run(self):
+        "Start running the REPL in the asyncio loop. Return 0 when done."
+
+        # When the user uses exit() or quit() in their interactive shell
+        # they probably just want to exit the created shell, not the whole
+        # process. exit and quit in builtins closes sys.stdin which makes
+        # it super difficult to restore
+        #
+        # When self.local_exit is True, we overwrite the builtins so
+        # exit() and quit() only raises SystemExit and we can catch that
+        # to only exit the interactive shell
+
+        sentinel = []
+        saved_values = (
+            getattr(sys, "ps1", sentinel),
+            getattr(sys, "ps2", sentinel),
+            builtins.quit,
+            builtins.exit,
+            builtins.help,
+        )
+
+        try:
+            sys.ps1 = self.ps1
+            sys.ps2 = self.ps2
+            builtins.quit = hy.repl.HyQuitter("quit")
+            builtins.exit = hy.repl.HyQuitter("exit")
+            builtins.help = hy.repl.HyHelper()
+
+            with hy.repl.filtered_hy_exceptions(), hy.repl.extend_linecache(self.cmdline_cache):
+                asyncio.run(self.interact(self.banner()))
+
+        finally:
+            sys.ps1, sys.ps2, builtins.quit, builtins.exit, builtins.help = saved_values
+            for a in "ps1", "ps2":
+                if getattr(sys, a) is sentinel:
+                    delattr(sys, a)
+
+        return 0
+
+    async def interact(self, banner=None, exitmsg=None):
+        """
+        An async version of `InteractiveConsole.interact`.
+        """
+
+        if banner:
+            self.write("%s\n" % str(banner))
+
+        plot_task = None
+        if self.pyplot:
+            plot_task = asyncio.create_task(self._update_plots())
+
+        try:
+            while True:
+                try:
+                    try:
+                        line = await self.get_input()
+                    except EOFError:
+                        self.write("\n")
+                        break
+                    else:
+                        self.push(line)
+                except KeyboardInterrupt:
+                    self.write("\nKeyboardInterrupt\n")
+                    self.resetbuffer()
+                except SystemExit as e:
+                    if self.local_exit:
+                        self.write("\n")
+                        break
+                    else:
+                        raise e
+        finally:
+
+            if exitmsg is None:
+                self.write('now exiting %s...\n' % self.__class__.__name__)
+            elif exitmsg != '':
+                self.write('%s\n' % exitmsg)
+
+            if plot_task:
+                plot_task.cancel()
+                try:
+                    await plot_task
+                except asyncio.CancelledError:
+                    pass
