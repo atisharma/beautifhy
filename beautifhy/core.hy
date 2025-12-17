@@ -47,3 +47,4 @@
 (defmacro rest [xs]
   "A slice of all but the first element of a sequence."
   `(cut ~xs 1 None))
+

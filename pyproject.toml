@@ -31,10 +31,10 @@ classifiers = [
 dependencies = [
     "hy>=1.0.0",
     "hyrule>=1.0.0",
-    "toolz",
     "multimethod>=2.0",
     "pygments",
-    "prompt_toolkit"
+    "prompt_toolkit",
+    "toolz"
 ]
 
 [project.optional-dependencies]
@@ -56,4 +56,3 @@ hy-repl = "beautifhy:__cli_repl"
 
 # ... other project metadata fields as listed in:
 #     https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
-

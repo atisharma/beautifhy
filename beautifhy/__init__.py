@@ -7,7 +7,7 @@ import sys
 
 # set the package version
 # the major.minor version simply match the assumed Hy version
-__version__ = "1.1.4"
+__version__ = "1.1.5"
 __version_info__ = __version__.split(".")
 
 
@@ -37,22 +37,26 @@ def __cli_hylight_files():
     """Syntax highlight hy or python files from the shell."""
     # The first arg is script name, ignore it.
     # - for stdin
-    # FIXME: set to light bg, should change to configurable
     from beautifhy import highlight
     from beautifhy.core import slurp
+    from pygments.formatters import TerminalFormatter
+    from pygments.lexers import get_lexer_by_name
     for fname in sys.argv[1:]:
         if fname.endswith(".hy"):
-            lexer = highlight.get_lexer_by_name("hylang")
+            language = "hylang"
             code = slurp(fname)
         elif fname.endswith(".py"):
-            lexer = highlight.get_lexer_by_name("python")
+            language = "python"
             code = slurp(fname)
         elif fname == "-":
-            lexer = highlight.get_lexer_by_name("hylang")
+            language = "hylang"
             code = sys.stdin.read()
         else:
             raise ValueError(f"Unrecognised file extension for {fname}.")
-        formatter = highlight.TerminalFormatter(linenos=False, bg="light", stripall=True)
+    
+        formatter = TerminalFormatter(style=highlight.style_name, bg=highlight.bg, stripall=True)
+        lexer = get_lexer_by_name(language)
+
         print()
         print(highlight.highlight(code, lexer, formatter))
         print()
