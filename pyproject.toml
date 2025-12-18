@@ -33,7 +33,6 @@ dependencies = [
     "hyrule>=1.0.0",
     "multimethod>=2.0",
     "pygments",
-    "prompt_toolkit",
     "toolz"
 ]
 
@@ -52,7 +51,6 @@ version = {attr = "beautifhy.__version__"}
 [project.scripts]
 beautifhy = "beautifhy:__cli_grind_files"
 hylight = "beautifhy:__cli_hylight_files"
-hy-repl = "beautifhy:__cli_repl"
 
 # ... other project metadata fields as listed in:
 #     https://packaging.python.org/en/latest/guides/writing-pyproject-toml/

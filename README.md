@@ -1,6 +1,6 @@
 ## 🦑 Beautifhy
 
-*A [Hy](https://hylang.org) beautifier / code formatter / pretty-printer / enhanced REPL.*
+*A [Hy](https://hylang.org) beautifier / code formatter / pretty-printer.*
 
 Probably compatible with Hy 1.0.0 and later.
 
@@ -10,21 +10,6 @@ Probably compatible with Hy 1.0.0 and later.
 ```bash
 $ pip install -U beautifhy
 ```
-
-
-### REPL
-
-Beautifhy comes with a REPL that implements multi-line editing, completion, live input validation and live syntax highlighting.
-
-```bash
-$ hy-repl
-```
-
-The behaviour of the repl may be modified with the following environment variables.
-
-- `HY_HISTORY`: Path to a file for storing command history. Defaults to `~/.hy-history`.
-- `HY_PYGMENTS_STYLE`: The name of a pygments style to use for highlighting. Defaults to `lightbulb`.
-- `HY_LIVE_COMPLETION`: If set, enables live/interactive autocompletion in a dropdown menu as you type. Defaults to off.
 
 
 ### Usage: pretty-printer and syntax highlighter
@@ -101,13 +86,11 @@ $ python3 -m py2hy some_code.py | beautifhy - | hylight -
 ### Acknowledgements
 
 The whole library uses [pygments](https://pygments.org/).
-`hy-repl` also uses [prompt-toolkit](https://python-prompt-toolkit.readthedocs.io/).
-Plus, of course, [Hy](https://hylang.org), whose REPL `hy-repl` extends.
 The autoformatter relies on polymorphic dispatch provided by [multimethod](https://coady.github.io/multimethod/).
 
 
 ### Docs
 
-I'm lazy, so try clicking below.
+The docstrings are not bad. Otherwise, try clicking below.
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/atisharma/beautifhy)
