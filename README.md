@@ -11,6 +11,10 @@ Probably compatible with Hy 1.0.0 and later.
 $ pip install -U beautifhy
 ```
 
+The pygments style may be modified with the environment variable
+`HY_PYGMENTS_STYLE`. This sets the name of a pygments style to use for
+highlighting. Defaults to `lightbulb`.
+
 
 ### Usage: pretty-printer and syntax highlighter
 

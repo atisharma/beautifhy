@@ -15,7 +15,7 @@ Utilities for code inspection and presentation.
 
 
 ;; Read environment variable for theme
-(setv style-name (os.environ.get "HY_REPL_PYGMENTS_STYLE" "lightbulb"))
+(setv style-name (os.environ.get "HY_PYGMENTS_STYLE" "lightbulb"))
 (setv bg "dark") ; default dark
 (when (in ":" style_name)
   (setv [style_name bg] (.split style-name ":" 1)))
