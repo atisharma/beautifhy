@@ -1,6 +1,6 @@
 """
 A safe character reader for parsing Hy source,
-without compiling reader macros,
+without compiling user-defined reader macros,
 and preserving comments.
 """
 
@@ -8,7 +8,8 @@ from hy.core.hy_repr import hy_repr_register
 from hy.models import Keyword, Symbol
 
 from hy.reader.exceptions import LexException, PrematureEndOfInput
-from hy.reader.hy_reader import sym, mkexpr, as_identifier, HyReader
+from hy.reader.hy_reader import sym, mkexpr, as_identifier
+from hy.hy_inspect import HySafeReader
 
 
 class Comment(Keyword):
@@ -42,26 +43,8 @@ class Comment(Keyword):
 hy_repr_register(Comment, str)
 
 
-class HyReaderWithComments(HyReader):  
-    """A HyReader subclass that tokenizes comments."""  
-      
-    def __init__(self, **kwargs):
-        kwargs['use_current_readers'] = False
-        super().__init__(**kwargs)
-
-        # The metaclass creates DEFAULT_TABLE for each class independently.
-        # The child's DEFAULT_TABLE only has methods defined in the child.
-        # Manually merge parent's table first, then child's.
-        self.reader_table = {}
-        self.reader_table.update(HyReader.DEFAULT_TABLE)
-        self.reader_table.update(self.DEFAULT_TABLE)
-        
-        # Also need to rebuild reader_macros since parent's __init__ 
-        # already moved # macros before we fixed reader_table
-        self.reader_macros = {}
-        for tag in list(self.reader_table.keys()):
-            if tag[0] == '#' and tag[1:]:
-                self.reader_macros[tag[1:]] = self.reader_table.pop(tag)
+class HyReaderWithComments(HySafeReader):
+    """A HyReader subclass that tokenizes comments."""
 
     @reader_for(";")
     def line_comment(self, _):

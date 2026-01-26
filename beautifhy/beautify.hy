@@ -11,7 +11,7 @@ Here we use 2 spaces for indentation (by default).
 There are a special cases about when not to break to the next line,
 to handle paired `cond`, `let` assignments, etc.
 
-Comments are lost by HyReader.
+Comments are lost by HySafeReader.
 
 The Hy Expressions (forms) keep information about their original
 position: `f.start-column`, `f.start-line` etc.
@@ -27,7 +27,7 @@ is disabled pending a solution.
 
 (import hyrule [inc dec flatten])
 (import beautifhy.core [slurp first second last])
-(import beautifhy.reader [HyReader HyReaderWithComments Comment])
+(import beautifhy.reader [HySafeReader HyReaderWithComments Comment])
 (import itertools [batched]) ;; batched was introduced in python 3.12
 
 (import multimethod [DispatchError])
@@ -238,7 +238,7 @@ is disabled pending a solution.
   This is probably what you want to use."
   (let [forms (read-many source
                          :skip-shebang True
-                         :reader (HyReader :use-current-readers False))]
+                         :reader (HySafeReader :use-current-readers False))]
     (grind forms :size size :source source #** kwargs)))
 
 (defmethod grind [#^ Lazy forms * source #** kwargs]
@@ -303,7 +303,7 @@ is disabled pending a solution.
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
       ")")
-    
+
     ;; Forms like `for`, `let` and `with` take a list determining assignments.
     ;; This list should be paired.
     (_takes-paired-list (first forms))
@@ -339,7 +339,7 @@ is disabled pending a solution.
                        "\n" (_indent indent-str)
                        (grind b :indent-str (_indent indent-str) :size size))))
        ")")
-    
+
     ;; All other cases follow default indenting rules.
     :else
     (+
@@ -393,7 +393,7 @@ is disabled pending a solution.
       (+ "{"
          (_layout expr :indent-str (+ " " indent-str) :size size :pair True)
          "}")))
-      
+
 (defmethod grind [#^ List expr * [indent-str ""] [size SIZE] [pair False] #** kwargs] 
   "This is the implementation for `List`.
   The `pair` keyword determines whether the list's items presented in pairs."
@@ -410,7 +410,7 @@ is disabled pending a solution.
       (+ "#("
          (_layout expr :indent-str (+ "  " indent-str) :size size :pair False)
          ")")))
-  
+
 (defmethod grind [#^ Set expr * [indent-str ""] [size SIZE] #** kwargs] 
   "This is the implementation for `Set`."
   (if (_is-printable expr :size size)
@@ -418,7 +418,7 @@ is disabled pending a solution.
       (+ "#{"
          (_layout expr :indent-str (+ "  " indent-str) :size size :pair False)
          "}")))
-      
+
 
 ;; * The entrypoints
 ;; -----------------------------------
