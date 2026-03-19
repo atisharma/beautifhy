@@ -28,25 +28,29 @@ def __cli_grind_files():
         help="Hy files to format (use '-' for stdin)"
     )
     parser.add_argument(
-        "-v", "--version",
+        "--write", "-w",
+        action="store_true",
+        help="write formatted output back to files (in-place)"
+    )
+    parser.add_argument(
+        "--check", "-c",
+        action="store_true",
+        help="check if files need reformatting (CI mode)"
+    )
+    parser.add_argument(
+        "--version", "-v",
         action="version",
         version=f"%(prog)s {__version__}"
     )
-    parser.add_argument(
-        "-w", "--write",
-        action="store_true",
-        help="Write formatted output back to files (in-place)"
-    )
-    parser.add_argument(
-        "-c", "--check",
-        action="store_true",
-        help="Check if files would be reformatted (exit with error if so)"
-    )
+
     args = parser.parse_args()
 
+    # If no files specified, read from stdin
     if not args.files:
-        parser.print_help()
-        sys.exit(0)
+        code = sys.stdin.read()
+        print(beautify.grind(code))
+        print()
+        return
 
     check_failed = False
 
@@ -77,8 +81,9 @@ def __cli_grind_files():
         else:
             raise ValueError(f"Unrecognised file extension for {fname}.")
 
-    if args.check and check_failed:
+    if check_failed:
         sys.exit(1)
+
 
 def __cli_hylight_files():
     """Syntax highlight hy or python files from the shell."""
@@ -97,15 +102,23 @@ def __cli_hylight_files():
         help="Files to highlight (use '-' for stdin)"
     )
     parser.add_argument(
-        "-v", "--version",
+        "--version", "-v",
         action="version",
         version=f"%(prog)s {__version__}"
     )
+
     args = parser.parse_args()
 
+    # If no files specified, read from stdin
     if not args.files:
-        parser.print_help()
-        sys.exit(0)
+        code = sys.stdin.read()
+        language = "hylang"
+        formatter = TerminalFormatter(style=highlight.style_name, bg=highlight.bg, stripall=True)
+        lexer = get_lexer_by_name(language)
+        print()
+        print(highlight.highlight(code, lexer, formatter))
+        print()
+        return
 
     for fname in args.files:
         if fname.endswith(".hy"):
