@@ -29,7 +29,7 @@ classifiers = [
     "Topic :: Utilities"
 ]
 dependencies = [
-    "hy>=1.0.0",
+    "hy>=1.2.0",
     "hyrule>=1.0.0",
     "multimethod>=2.0",
     "pygments",
