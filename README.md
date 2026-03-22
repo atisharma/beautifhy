@@ -27,9 +27,6 @@ gives the output
 ```hylang
 (import toolz [first second last])
 
- ;; * Utility things
- ;; -----------------------------------------
-
 (defmacro defmethod [#* args]
   "Define a multimethod (using multimethod.multimethod).
   For example, the Hy code
@@ -54,7 +51,6 @@ gives the output
     (let [f (first args) body (cut args 1 None)]
       `(defn [hy.I.multimethod.multimethod] ~f ~@body))))
 
-
 (defn slurp [fname #** kwargs]
   "Read a file and return as a string.
   kwargs can include mode, encoding and buffering, and will be passed
@@ -62,7 +58,6 @@ gives the output
   (let [f (if (:encoding kwargs None) hy.I.codecs.open open)]
     (with [o (f fname #** kwargs)]
       (o.read))))
-
 
 (defmacro rest [xs]
   "A slice of all but the first element of a sequence."
