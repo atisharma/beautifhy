@@ -1,6 +1,6 @@
 ## 🦑 Beautifhy
 
-*A [Hy](https://hylang.org) beautifier / code formatter / pretty-printer.*
+*A [Hy](https://hylang.org) beautifier / code formatter / pretty-printer / linter.*
 
 Probably compatible with Hy 1.0.0 and later.
 
@@ -81,6 +81,50 @@ To convert python code to Hy (using [py2hy](https://github.com/hylang/py2hy)), a
 $ pip3 install py2hy
 $ python3 -m py2hy some_code.py | beautifhy - | hylight -
 ```
+
+### Usage: linter
+
+`hylint` checks Hy source for syntax errors and common issues.
+
+```bash
+$ hylint myfile.hy
+```
+
+With `--style` / `-s`, also runs opinionated style checks (camelCase names,
+missing docstrings, earmuff variables):
+
+```bash
+$ hylint --style myfile.hy
+```
+
+With `--error-only` / `-e`, only errors are shown (suppresses warnings and info):
+
+```bash
+$ hylint --error-only myfile.hy
+```
+
+Reads from stdin with `-`:
+```bash
+$ cat myfile.hy | hylint -
+```
+
+Exit code is 1 if any errors are found, 0 otherwise. Suitable for CI.
+
+**Lint rules (always on):**
+- `(defn f (x) ...)` — use `[]` for parameter lists, not `()`
+- `(defn f [...] (do ...))` — remove redundant `do`
+- `(fn [...] (do ...))` — remove redundant `do`
+- `(when cond (do ...))` — remove redundant `do`
+- `(if cond (do ...))` — use `(when cond ...)`
+- `(do expr)` — redundant single-expression `do`
+- `(+ x 0)`, `(* x 1)` — identity arithmetic
+- `(+ x 1)` → `(inc x)`, `(- x 1)` → `(dec x)` (from hyrule)
+
+**Style rules (`--style`):**
+- camelCase function names — use kebab-case
+- Missing docstrings on `defn`/`defmacro`
+- Trailing commas in parameter lists
+- Earmuff variables (`*var*`) — use UPPER_SNAKE or kebab-case
 
 ### Acknowledgements
 

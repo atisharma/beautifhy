@@ -1,3 +1,8 @@
+"
+Utility functions and macros.
+Stolen from hyjinx, duplicated here to avoid a fat import.
+"
+
 (import toolz [first second last])
 
 
@@ -47,4 +52,29 @@
 (defmacro rest [xs]
   "A slice of all but the first element of a sequence."
   `(cut ~xs 1 None))
+
+
+;; * Lint/style shared utilities
+;; -----------------------------------------
+
+(defn issue [msg severity line col]
+  "Create a lint/style issue dict."
+  {"message" msg "severity" severity "line" line "column" col})
+
+(defn defn-layout [form]
+  "Return [name-idx params-idx] for a defn/fn form.
+  Accounts for optional :async keyword and decorator list.
+  (defn name [params] ...)                 → [1 2]
+  (defn [decorator] name [params] ...)     → [2 3]
+  (defn :async name [params] ...)          → [2 3]
+  (defn :async [decorator] name [params])  → [3 4]"
+  (import hy.models [Keyword List])
+  (let [offset 1]
+    (when (and (>= (len form) (+ offset 1))
+               (isinstance (get form offset) Keyword))
+      (+= offset 1))
+    (when (and (>= (len form) (+ offset 1))
+               (isinstance (get form offset) List))
+      (+= offset 1))
+    [offset (+ offset 1)]))
 

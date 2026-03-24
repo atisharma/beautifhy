@@ -51,6 +51,7 @@ version = {attr = "beautifhy.__version__"}
 [project.scripts]
 beautifhy = "beautifhy:__cli_grind_files"
 hylight = "beautifhy:__cli_hylight_files"
+hylint = "beautifhy:__cli_lint_files"
 
 [tool.pytest.ini_options]
 python_files = ["test_*.py", "*_test.py", "test_*.hy", "*_test.hy"]
