@@ -138,3 +138,70 @@ def __cli_hylight_files():
         print()
         print(highlight.highlight(code, lexer, formatter))
         print()
+
+
+def __cli_lint_files():
+    """Lint Hy files from the shell."""
+    import hy
+    from beautifhy.lint import lint, report_issues
+    from beautifhy.style import lint_style, lint_style_forms
+    from beautifhy.core import slurp
+
+    parser = argparse.ArgumentParser(
+        description="Lint Hy files for syntax errors and common issues.",
+        prog="hylint"
+    )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        help="Hy files to lint (use '-' for stdin)"
+    )
+    parser.add_argument(
+        "--style", "-s",
+        action="store_true",
+        help="also run opinionated style checks (camelCase, docstrings, earmuffs)"
+    )
+    parser.add_argument(
+        "--error-only", "-e",
+        action="store_true",
+        help="only show errors (not warnings or info)"
+    )
+    parser.add_argument(
+        "--version", "-v",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+
+    args = parser.parse_args()
+
+    def check(code, filename):
+        issues = lint(code)
+        if args.style:
+            issues += lint_style(code)
+        if args.error_only:
+            issues = [i for i in issues if i.get("severity") == "error"]
+        # Sort by line number for readable output
+        issues.sort(key=lambda i: (i.get("line", 0), i.get("column", 0)))
+        return report_issues(issues, filename=filename)
+
+    total_errors = 0
+    total_warnings = 0
+
+    if not args.files:
+        result = check(sys.stdin.read(), "<stdin>")
+        total_errors += result["errors"]
+        total_warnings += result["warnings"]
+    else:
+        for fname in args.files:
+            if fname == "-":
+                result = check(sys.stdin.read(), "<stdin>")
+            elif fname.endswith(".hy"):
+                result = check(slurp(fname), fname)
+            else:
+                print(f"hylint: unrecognised file extension: {fname}", file=sys.stderr)
+                sys.exit(2)
+            total_errors += result["errors"]
+            total_warnings += result["warnings"]
+
+    if total_errors > 0:
+        sys.exit(1)
