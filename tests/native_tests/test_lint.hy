@@ -104,8 +104,13 @@ Test cases for beautifhy.lint
 
 (defn test-lint-if-else-do []
   "Test that redundant do in else branch is flagged."
-  (let [issues (lint "(if cond x (do y z))")]
+  (let [issues (lint "(if cond x (do y))")]
     (assert (has-message? issues "redundant do in else"))))
+
+(defn test-lint-if-else-do-multi []
+  "Test that do with multiple exprs in else branch is NOT flagged."
+  (let [issues (lint "(if cond x (do y z))")]
+    (assert (not (has-message? issues "redundant do in else")))))
 
 
 (defn test-lint-decorated-defn []
