@@ -198,14 +198,26 @@ special forms.
        (.startswith (_repr form) ";")
        (not (.startswith (_repr form) ";;"))))
 
+(defn _is-def-form? [form]
+  "Is this a defn/defmethod/defclass/defmacro form?"
+  (and (isinstance form Expression)
+       (> (len form) 0)
+       (isinstance (first form) Symbol)
+       (_is-def (first form))))
+
 (defn _separator [f next-f indent-str]
   "Determine the separator after form f, before next-f.
-  Section comments get blank lines before and after.
+  Section comments and def-forms get blank lines.
   Trailing comments stay on the same line as the preceding form."
   (cond
     ;; blank line around section comments
     (or (_section-comment? f)
         (_section-comment? next-f))
+    (+ "\n\n" indent-str " ")
+
+    ;; blank line around def-forms (defn, defmethod, defclass, etc.)
+    (or (_is-def-form? f)
+        (_is-def-form? next-f))
     (+ "\n\n" indent-str " ")
 
     ;; after trailing comment — new line for next form
@@ -405,13 +417,21 @@ special forms.
                                 (get form-list (+ ix 1)))
                        f-section (_section-comment? f)
                        next-section (_section-comment? next-f)
+                       f-def (_is-def-form? f)
+                       next-def (_is-def-form? next-f)
                        sep (cond
                              ;; between two section comments: just a line break (grouped)
                              (and f-section next-section) "\n"
-                             ;; after a section comment, before non-section: blank line
+                             ;; after a section comment: blank line
                              f-section "\n\n"
-                             ;; before a section comment, after non-section: blank line
+                             ;; before a section comment: blank line
                              next-section "\n\n"
+                             ;; between two def-forms: blank line
+                             (and f-def next-def) "\n\n"
+                             ;; after a def-form: blank line
+                             f-def "\n\n"
+                             ;; before a def-form: blank line
+                             next-def "\n\n"
                              ;; trailing comment stays on same line as preceding form
                              (_trailing-comment? f) "\n"
                              (_trailing-comment? next-f) " "
