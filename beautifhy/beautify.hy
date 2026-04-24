@@ -11,13 +11,9 @@ Here we use 2 spaces for indentation (by default).
 There are a special cases about when not to break to the next line,
 to handle paired `cond`, `let` assignments, etc.
 
-Comments are lost by HySafeReader.
-
-The Hy Expressions (forms) keep information about their original
-position: `f.start-column`, `f.start-line` etc.
-
-Comments are kept by HyReaderWithComments, but this breaks pairing, so
-is disabled pending a solution.
+Comments are kept by HyReaderWithComments and rendered by the Comment
+handler. They are filtered out before pairing logic so they don't break
+cond/let/setv pairing.
 "
 
 ;; TODO : abstract out form pairing or listing from grind(Expression)
@@ -185,35 +181,105 @@ is disabled pending a solution.
   the methods specific to various objects."
   (cond
 
-    ;; short and paired
+    ;; short and paired - with comment preservation
     (and pair
          (_is-printable forms :size size))
-    (.join (+ "\n" indent-str)
-           (lfor [a b] (batched forms 2)
-                 (+ (grind a :indent-str (_indent indent-str) :size size)
-                    " "
-                    (grind b :indent-str (_indent indent-str) :size size))))
+    (let [items (list forms)
+          result []
+          pending-comments []
+          i 0]
+      (while (< i (len items))
+        (setv item (get items i))
+        (if (isinstance item Comment)
+            ;; accumulate comments
+            (do
+              (.append pending-comments (cut (_repr item) 0 -1))
+              (+= i 1))
+            ;; pair with next non-comment
+            (do
+              (setv a item)
+              (setv j (+ i 1))
+              (while (and (< j (len items))
+                          (isinstance (get items j) Comment))
+                (+= j 1))
+              (when (< j (len items))
+                ;; render pending comments
+                (when pending-comments
+                  (.append result (.join (+ "\n" (_indent indent-str))
+                                         pending-comments))
+                  (setv pending-comments []))
+                (.append result (+ (grind a :indent-str (_indent indent-str) :size size)
+                                   " "
+                                   (grind (get items j) :indent-str (_indent indent-str) :size size)))
+                (setv i (+ j 1))
+                (continue))
+              ;; no pair found
+              (.append result (grind a :indent-str (_indent indent-str) :size size))
+              (+= i 1))))
+      ;; flush remaining comments
+      (when pending-comments
+        (.append result (.join (+ "\n" (_indent indent-str))
+                               pending-comments)))
+      (.join (+ "\n" indent-str) result))
 
     ;; long, paired, and the first of each pair is short enough
     (and pair
          (all (map (fn [form] (_is-printable form :size 3))
                    (cut forms 0 None 2))))
     ;; then indent the right-hand objects by the longest of the left-hand ones.
-    (let [instr (* " " (max (map (fn [f] (len (_repr f))) 
-                                (cut forms 0 None 2))))]
+    (let [non-comment-forms (list (filter (fn [f] (not (isinstance f Comment)))
+                                          forms))
+          instr (* " " (max (map (fn [f] (len (_repr f)))
+                                (cut non-comment-forms 0 None 2))))]
       (.join (+ "\n" indent-str)
-             (lfor [a b] (batched forms 2)
+             (lfor [a b] (batched non-comment-forms 2)
                  (+ (grind a :indent-str (_indent indent-str) :size size)
                     (cut instr (len (_repr a)) None) " "
                     (grind b :indent-str (+ instr (_indent indent-str)) :size size)))))
 
-    ;; long and paired
+    ;; long and paired - with comment preservation
     pair
-    (.join (+ "\n" indent-str)
-           (lfor [a b] (batched forms 2)
-                 (+ (grind a :indent-str (_indent indent-str) :size size)
-                    "\n\n" (_indent indent-str)
-                    (grind b :indent-str (+ "__" (_indent indent-str)) :size size))))
+    (let [items (list forms)
+          blocks []
+          pending-comments []
+          i 0]
+      (while (< i (len items))
+        (setv item (get items i))
+        (if (isinstance item Comment)
+            ;; accumulate comments to prepend to next pair
+            (do
+              (.append pending-comments (cut (_repr item) 0 -1))
+              (+= i 1))
+            ;; pair with next non-comment item
+            (do
+              (setv a item)
+              (setv j (+ i 1))
+              ;; skip comments to find the value
+              (while (and (< j (len items))
+                          (isinstance (get items j) Comment))
+                (+= j 1))
+              (when (< j (len items))
+                (setv pair-str (+ (grind a :indent-str (_indent indent-str) :size size)
+                                  "\n\n" (_indent indent-str)
+                                  (grind (get items j) :indent-str (+ "__" (_indent indent-str)) :size size)))
+                ;; prepend pending comments
+                (when pending-comments
+                  (setv comment-lines (.join (+ "\n" (_indent indent-str))
+                                            pending-comments))
+                  (setv pair-str (+ comment-lines "\n" (_indent indent-str)
+                                    pair-str)))
+                (.append blocks pair-str)
+                (setv pending-comments [])
+                (setv i (+ j 1))
+                (continue))
+              ;; no pair found (shouldn't happen in valid code)
+              (.append blocks (grind a :indent-str (_indent indent-str) :size size))
+              (+= i 1))))
+      ;; flush any remaining comments
+      (when pending-comments
+        (.append blocks (.join (+ "\n" (_indent indent-str))
+                               pending-comments)))
+      (.join (+ "\n" indent-str) blocks))
 
     ;; short and not paired - just print
     (_is-printable forms :size size)
@@ -238,7 +304,7 @@ is disabled pending a solution.
   This is probably what you want to use."
   (let [forms (read-many source
                          :skip-shebang True
-                         :reader (HySafeReader :use-current-readers False))]
+                         :reader (HyReaderWithComments :use-current-readers False))]
     (grind forms :size size :source source #** kwargs)))
 
 (defmethod grind [#^ Lazy forms * source #** kwargs]
@@ -323,22 +389,58 @@ is disabled pending a solution.
                         (+ (grind f :indent-str (_indent indent-str) :size size) sep))))
          ")"))
 
+    ;; Expressions with `cond` as first form should have the following
+    ;; forms go in pairs. Comments are preserved but excluded from pairing.
+    (_is-paired (first forms))
+    (let [items (rest forms)
+          blocks []
+          pending-comments []
+          i 0]
+      (while (< i (len items))
+        (setv item (get items i))
+        (if (isinstance item Comment)
+            ;; accumulate comments to prepend to next pair
+            (do
+              (.append pending-comments (cut (_repr item) 0 -1))
+              (+= i 1))
+            ;; pair with next non-comment item
+            (do
+              (setv a item)
+              (setv j (+ i 1))
+              ;; skip comments to find the value
+              (while (and (< j (len items))
+                          (isinstance (get items j) Comment))
+                (+= j 1))
+              (when (< j (len items))
+                (setv pair-str (+ (grind a :indent-str (_indent indent-str) :size size)
+                                  "\n" (_indent indent-str)
+                                  (grind (get items j) :indent-str (_indent indent-str) :size size)))
+                ;; prepend pending comments
+                (when pending-comments
+                  (setv comment-lines (.join (+ "\n" (_indent indent-str))
+                                            pending-comments))
+                  ;; add leading indent to pair lines since comments take the first line indent
+                  (setv pair-str (+ comment-lines "\n" (_indent indent-str)
+                                    pair-str)))
+                (.append blocks pair-str)
+                (setv pending-comments [])
+                (setv i (+ j 1))
+                (continue))
+              ;; no pair found (shouldn't happen in valid code)
+              (.append blocks (grind a :indent-str (_indent indent-str) :size size))
+              (+= i 1))))
+      ;; flush any remaining comments
+      (when pending-comments
+        (.append blocks (.join (+ "\n" (_indent indent-str))
+                               pending-comments)))
+      (+ "(" (first forms) "\n"
+         (_indent indent-str)
+         (.join (+ "\n\n" (_indent indent-str)) blocks)
+         "\n" indent-str ")"))
+
     ;; Expressions with few enough forms just get printed
     (_is-printable forms :size size)
     (_repr forms)
-
-    ;; Expressions with `cond` as first form should have the following
-    ;; forms go in pairs
-    (_is-paired (first forms))
-    (+ "(" (first forms) "\n"
-       (_indent indent-str)
-       (.join (+ "\n\n" (_indent indent-str))
-              ;; pair them off
-              (lfor [a b] (batched (rest forms) 2)
-                    (+ (grind a :indent-str (_indent indent-str) :size size)
-                       "\n" (_indent indent-str)
-                       (grind b :indent-str (_indent indent-str) :size size))))
-       ")")
 
     ;; All other cases follow default indenting rules.
     :else
@@ -397,7 +499,7 @@ is disabled pending a solution.
 (defmethod grind [#^ List expr * [indent-str ""] [size SIZE] [pair False] #** kwargs] 
   "This is the implementation for `List`.
   The `pair` keyword determines whether the list's items presented in pairs."
-  (if (_is-printable expr :size size)
+  (if (and (not pair) (_is-printable expr :size size))
       (_repr expr)
       (+ "["
          (_layout expr :indent-str (+ " " indent-str) :size size :pair pair)
