@@ -68,6 +68,7 @@ special forms.
 ;; -----------------------------------------
 
 (defn _indent [#^ str indent-str]
+  "Add one level of indentation to indent-str."
   (+ indent-str INDENT_STR))
 
 (defmethod _repr [#^ Object f]
@@ -259,7 +260,7 @@ special forms.
           ;; pair with next non-comment
           (do
             (setv a item)
-            (setv j (+ i 1))
+            (setv j (inc i))
             (while (and (< j (len items))
                         (isinstance (get items j) Comment))
               (+= j 1))
@@ -272,7 +273,7 @@ special forms.
               (.append result (+ (grind a :indent-str (_indent indent-str) :size size)
                                  " "
                                  (grind (get items j) :indent-str (_indent indent-str) :size size)))
-              (setv i (+ j 1))
+              (setv i (inc j))
               (continue))
             ;; no pair found
             (.append result (grind a :indent-str (_indent indent-str) :size size))
@@ -313,7 +314,7 @@ special forms.
           ;; pair with next non-comment item
           (do
             (setv a item)
-            (setv j (+ i 1))
+            (setv j (inc i))
             ;; skip comments to find the value
             (while (and (< j (len items))
                         (isinstance (get items j) Comment))
@@ -330,7 +331,7 @@ special forms.
                                   pair-str)))
               (.append blocks pair-str)
               (setv pending-comments [])
-              (setv i (+ j 1))
+              (setv i (inc j))
               (continue))
             ;; no pair found (shouldn't happen in valid code)
             (.append blocks (grind a :indent-str (_indent indent-str) :size size))
@@ -413,8 +414,8 @@ special forms.
   (let [form-list (list forms)]
     (.join ""
            (lfor [ix f] (enumerate form-list)
-                 (let [next-f (when (< (+ ix 1) (len form-list))
-                                (get form-list (+ ix 1)))
+                 (let [next-f (when (< (inc ix) (len form-list))
+                                (get form-list (inc ix)))
                        f-section (_section-comment? f)
                        next-section (_section-comment? next-f)
                        f-def (_is-def-form? f)
@@ -467,8 +468,8 @@ special forms.
       (.join ""
              (lfor [ix f] (enumerate (cut forms 3 None))
                    (let [rest-forms (cut forms 3 None)
-                         next-f (when (< (+ ix 1) (len rest-forms))
-                                  (get rest-forms (+ ix 1)))
+                         next-f (when (< (inc ix) (len rest-forms))
+                                  (get rest-forms (inc ix)))
                          sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
@@ -489,8 +490,8 @@ special forms.
       (.join ""
              (lfor [ix f] (enumerate (cut forms 3 None))
                    (let [rest-forms (cut forms 3 None)
-                         next-f (when (< (+ ix 1) (len rest-forms))
-                                  (get rest-forms (+ ix 1)))
+                         next-f (when (< (inc ix) (len rest-forms))
+                                  (get rest-forms (inc ix)))
                          sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
@@ -509,8 +510,8 @@ special forms.
          (.join ""
                 (lfor [ix f] (enumerate (cut forms 2 None))
                       (let [rest-forms (cut forms 2 None)
-                            next-f (when (< (+ ix 1) (len rest-forms))
-                                     (get rest-forms (+ ix 1)))
+                            next-f (when (< (inc ix) (len rest-forms))
+                                     (get rest-forms (inc ix)))
                             sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                         (+ (grind f :indent-str (_indent indent-str) :size size) sep))))
          ")"))
@@ -532,7 +533,7 @@ special forms.
             ;; pair with next non-comment item
             (do
               (setv a item)
-              (setv j (+ i 1))
+              (setv j (inc i))
               ;; skip comments to find the value
               (while (and (< j (len items))
                           (isinstance (get items j) Comment))
@@ -550,7 +551,7 @@ special forms.
                                     pair-str)))
                 (.append blocks pair-str)
                 (setv pending-comments [])
-                (setv i (+ j 1))
+                (setv i (inc j))
                 (continue))
               ;; no pair found (shouldn't happen in valid code)
               (.append blocks (grind a :indent-str (_indent indent-str) :size size))
@@ -574,8 +575,8 @@ special forms.
       "("
       (.join ""
              (lfor [ix f] (enumerate forms)
-                   (let [next-f (when (< (+ ix 1) (len forms))
-                                  (get forms (+ ix 1)))
+                   (let [next-f (when (< (inc ix) (len forms))
+                                  (get forms (inc ix)))
                          sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
