@@ -9,7 +9,7 @@ import sys
 # set the package version
 # the major.minor version simply match the assumed Hy version
 # except for 1.2.1,2,3 where I forgot...
-__version__ = "1.2.4"
+__version__ = "1.2.5"
 __version_info__ = __version__.split(".")
 
 

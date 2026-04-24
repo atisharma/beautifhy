@@ -27,7 +27,7 @@ cond/let/setv pairing.
 (import hyrule [inc dec flatten])
 (import beautifhy.core [slurp first second last])
 (import beautifhy.reader [HyReaderWithComments Comment])
-(import itertools [batched]) ;; batched was introduced in python 3.12
+(import itertools [batched])
 
 (import multimethod [DispatchError])
 
