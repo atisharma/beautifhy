@@ -52,5 +52,5 @@ class HyReaderWithComments(HySafeReader):
         def comment_closing(c):
             return c == "\n"
 
-        s = self.read_chars_until(comment_closing, ";", is_fstring=False)
+        s = self.read_chars_until(comment_closing, "r;", is_fstring=False)
         return Comment(s)
