@@ -48,7 +48,11 @@ special forms.
 ;; -----------------------------------------
 
 (defmethod _is-printable [#^ (| Expression Sequence) form * [size SIZE] [str-size STR_SIZE]]
-    (<= (len (flatten form)) size))
+    ;; Forms containing Comments cannot render inline via hy.repr
+    ;; (which doesn't handle Comment indentation), so force them
+    ;; through grind's layout engine instead.
+    (and (not (any (map (fn [f] (isinstance f Comment)) form)))
+         (<= (len (flatten form)) size)))
 
 (defmethod _is-printable [#^ String form * [size SIZE] [str-size STR_SIZE]]
     (<= (len form) str-size))
@@ -166,6 +170,10 @@ special forms.
 
 (defmethod _breaks-line [#^ Keyword form]
   False)
+
+(defmethod _breaks-line [#^ Comment form]
+  "Comments always start on their own line."
+  True)
 
 (defmethod _breaks-line [#^ Expression forms]
   "Methods / dotted identifiers have a particular form:
@@ -305,6 +313,12 @@ special forms.
   (cond
     ;; short and paired - with comment preservation
     (and pair (_is-printable forms :size size))
+    (_layout-short-paired forms indent-str size)
+
+    ;; paired forms with comments always use short-paired layout
+    ;; (which preserves comments); aligned-pairs drops them
+    (and pair
+         (any (map (fn [f] (isinstance f Comment)) forms)))
     (_layout-short-paired forms indent-str size)
 
     ;; long, paired, and the first of each pair is short enough
@@ -511,8 +525,9 @@ special forms.
 
 (defmethod grind [#^ Comment comment #** kwargs]
   "This applies to Comments."
-  ;; Because of the newline in the repr, the following atom will have lost a leading space.
-  (+ (_repr comment) " "))
+  ;; Strip the trailing newline from _repr so the separator model
+  ;; handles line breaks and indentation correctly.
+  (cut (_repr comment) 0 -1))
 
 
 
