@@ -14,12 +14,12 @@ to handle paired `cond`, `let` assignments, etc.
 Comments are kept by HyReaderWithComments and rendered by the Comment
 handler. They are filtered out before pairing logic so they don't break
 cond/let/setv pairing.
-
-NOTE: The final test of any change is to run `beautifhy beautifhy.hy`
-and visually inspect the output. Unit tests cover specific cases but
-cannot capture every interaction between comments, indentation, and
-special forms.
 "
+
+;; NOTE: The final test of any change is to run `beautifhy beautifhy.hy`
+;; and visually inspect the output. Unit tests cover specific cases but
+;; cannot capture every interaction between comments, indentation, and
+;; special forms.
 
 (require hyrule [-> ->> unless of defmain])
 (require beautifhy.core [defmethod rest])
@@ -284,7 +284,6 @@ special forms.
                              pending-comments)))
     (.join (+ "\n" indent-str) result)))
 
-
 (defn _layout-aligned-pairs [forms indent-str size]
   "Long paired forms with short LHS: align values to the widest key."
   (let [non-comment-forms (list (filter (fn [f] (not (isinstance f Comment)))
@@ -296,7 +295,6 @@ special forms.
                (+ (grind a :indent-str (_indent indent-str) :size size)
                   (cut instr (len (_repr a)) None) " "
                   (grind b :indent-str (+ instr (_indent indent-str)) :size size))))))
-
 
 (defn _layout-long-paired [forms indent-str size]
   "Long paired forms: blank line between pairs, preserving comments."
@@ -342,13 +340,11 @@ special forms.
                              pending-comments)))
     (.join (+ "\n" indent-str) blocks)))
 
-
 (defn _layout-inline [forms indent-str size]
   "Short non-paired forms: render inline."
   (.join " "
          (lfor f forms
                (grind f :indent-str (_indent indent-str) :size size))))
-
 
 (defn _layout-block [forms indent-str size]
   "Long non-paired forms: one per line."
