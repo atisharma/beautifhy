@@ -140,11 +140,11 @@ Rules:
                    (> (len consequent) 0)
                    (= (get consequent 0) DO))
           (.append issues (issue "(if cond (do ...)) — use (when cond ...)" INFO line col)))))
-    ;; (if cond then-expr (do ...)) → redundant do in else
+    ;; (if cond then-expr (do ...)) → redundant do in else (only if single expr)
     (when (= (len form) 4)
       (let [alternative (get form 3)]
         (when (and (isinstance alternative Expression)
-                   (> (len alternative) 0)
+                   (= (len alternative) 2)
                    (= (get alternative 0) DO))
           (.append issues (issue "(if cond x (do ...)) — remove redundant do in else branch" INFO line col)))))
     issues))
