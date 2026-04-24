@@ -14,16 +14,19 @@ to handle paired `cond`, `let` assignments, etc.
 Comments are kept by HyReaderWithComments and rendered by the Comment
 handler. They are filtered out before pairing logic so they don't break
 cond/let/setv pairing.
-"
 
-;; TODO : abstract out form pairing or listing from grind(Expression)
+NOTE: The final test of any change is to run `beautifhy beautifhy.hy`
+and visually inspect the output. Unit tests cover specific cases but
+cannot capture every interaction between comments, indentation, and
+special forms.
+"
 
 (require hyrule [-> ->> unless of defmain])
 (require beautifhy.core [defmethod rest])
 
 (import hyrule [inc dec flatten])
 (import beautifhy.core [slurp first second last])
-(import beautifhy.reader [HySafeReader HyReaderWithComments Comment])
+(import beautifhy.reader [HyReaderWithComments Comment])
 (import itertools [batched]) ;; batched was introduced in python 3.12
 
 (import multimethod [DispatchError])
@@ -173,125 +176,154 @@ cond/let/setv pairing.
 ;; * The layout engine
 ;; -----------------------------------
 
-(defmethod _layout [#^ Sequence forms * [indent-str ""] [size SIZE] [pair False] #** kwargs] 
+;; * Layout helpers
+;; -----------------------------------
+;; Each helper handles one layout case for sequences of forms.
+
+(defn _layout-short-paired [forms indent-str size]
+  "Short paired forms: render each pair inline, preserving comments."
+  (let [items (list forms)
+        result []
+        pending-comments []
+        i 0]
+    (while (< i (len items))
+      (setv item (get items i))
+      (if (isinstance item Comment)
+          ;; accumulate comments
+          (do
+            (.append pending-comments (cut (_repr item) 0 -1))
+            (+= i 1))
+          ;; pair with next non-comment
+          (do
+            (setv a item)
+            (setv j (+ i 1))
+            (while (and (< j (len items))
+                        (isinstance (get items j) Comment))
+              (+= j 1))
+            (when (< j (len items))
+              ;; render pending comments
+              (when pending-comments
+                (.append result (.join (+ "\n" (_indent indent-str))
+                                       pending-comments))
+                (setv pending-comments []))
+              (.append result (+ (grind a :indent-str (_indent indent-str) :size size)
+                                 " "
+                                 (grind (get items j) :indent-str (_indent indent-str) :size size)))
+              (setv i (+ j 1))
+              (continue))
+            ;; no pair found
+            (.append result (grind a :indent-str (_indent indent-str) :size size))
+            (+= i 1))))
+    ;; flush remaining comments
+    (when pending-comments
+      (.append result (.join (+ "\n" (_indent indent-str))
+                             pending-comments)))
+    (.join (+ "\n" indent-str) result)))
+
+
+(defn _layout-aligned-pairs [forms indent-str size]
+  "Long paired forms with short LHS: align values to the widest key."
+  (let [non-comment-forms (list (filter (fn [f] (not (isinstance f Comment)))
+                                        forms))
+        instr (* " " (max (map (fn [f] (len (_repr f)))
+                              (cut non-comment-forms 0 None 2))))]
+    (.join (+ "\n" indent-str)
+           (lfor [a b] (batched non-comment-forms 2)
+               (+ (grind a :indent-str (_indent indent-str) :size size)
+                  (cut instr (len (_repr a)) None) " "
+                  (grind b :indent-str (+ instr (_indent indent-str)) :size size))))))
+
+
+(defn _layout-long-paired [forms indent-str size]
+  "Long paired forms: blank line between pairs, preserving comments."
+  (let [items (list forms)
+        blocks []
+        pending-comments []
+        i 0]
+    (while (< i (len items))
+      (setv item (get items i))
+      (if (isinstance item Comment)
+          ;; accumulate comments to prepend to next pair
+          (do
+            (.append pending-comments (cut (_repr item) 0 -1))
+            (+= i 1))
+          ;; pair with next non-comment item
+          (do
+            (setv a item)
+            (setv j (+ i 1))
+            ;; skip comments to find the value
+            (while (and (< j (len items))
+                        (isinstance (get items j) Comment))
+              (+= j 1))
+            (when (< j (len items))
+              (setv pair-str (+ (grind a :indent-str (_indent indent-str) :size size)
+                                "\n\n" (_indent indent-str)
+                                (grind (get items j) :indent-str (+ "__" (_indent indent-str)) :size size)))
+              ;; prepend pending comments
+              (when pending-comments
+                (setv comment-lines (.join (+ "\n" (_indent indent-str))
+                                          pending-comments))
+                (setv pair-str (+ comment-lines "\n" (_indent indent-str)
+                                  pair-str)))
+              (.append blocks pair-str)
+              (setv pending-comments [])
+              (setv i (+ j 1))
+              (continue))
+            ;; no pair found (shouldn't happen in valid code)
+            (.append blocks (grind a :indent-str (_indent indent-str) :size size))
+            (+= i 1))))
+    ;; flush any remaining comments
+    (when pending-comments
+      (.append blocks (.join (+ "\n" (_indent indent-str))
+                             pending-comments)))
+    (.join (+ "\n" indent-str) blocks)))
+
+
+(defn _layout-inline [forms indent-str size]
+  "Short non-paired forms: render inline."
+  (.join " "
+         (lfor f forms
+               (grind f :indent-str (_indent indent-str) :size size))))
+
+
+(defn _layout-block [forms indent-str size]
+  "Long non-paired forms: one per line."
+  (.join (+ "\n" indent-str)
+         (lfor f forms
+               (grind f :indent-str (_indent indent-str) :size size))))
+
+
+;; * The layout engine
+;; -----------------------------------
+
+(defmethod _layout [#^ Sequence forms * [indent-str ""] [size SIZE] [pair False] #** kwargs]
   "The Hy pretty-printer Sequence layout engine.
 
   This method applies to a sequence of Hy forms, indenting by `indent-str`.
   It will not wrap in parentheses, brackets or the like. That is done in
   the methods specific to various objects."
   (cond
-
     ;; short and paired - with comment preservation
-    (and pair
-         (_is-printable forms :size size))
-    (let [items (list forms)
-          result []
-          pending-comments []
-          i 0]
-      (while (< i (len items))
-        (setv item (get items i))
-        (if (isinstance item Comment)
-            ;; accumulate comments
-            (do
-              (.append pending-comments (cut (_repr item) 0 -1))
-              (+= i 1))
-            ;; pair with next non-comment
-            (do
-              (setv a item)
-              (setv j (+ i 1))
-              (while (and (< j (len items))
-                          (isinstance (get items j) Comment))
-                (+= j 1))
-              (when (< j (len items))
-                ;; render pending comments
-                (when pending-comments
-                  (.append result (.join (+ "\n" (_indent indent-str))
-                                         pending-comments))
-                  (setv pending-comments []))
-                (.append result (+ (grind a :indent-str (_indent indent-str) :size size)
-                                   " "
-                                   (grind (get items j) :indent-str (_indent indent-str) :size size)))
-                (setv i (+ j 1))
-                (continue))
-              ;; no pair found
-              (.append result (grind a :indent-str (_indent indent-str) :size size))
-              (+= i 1))))
-      ;; flush remaining comments
-      (when pending-comments
-        (.append result (.join (+ "\n" (_indent indent-str))
-                               pending-comments)))
-      (.join (+ "\n" indent-str) result))
+    (and pair (_is-printable forms :size size))
+    (_layout-short-paired forms indent-str size)
 
     ;; long, paired, and the first of each pair is short enough
     (and pair
          (all (map (fn [form] (_is-printable form :size 3))
                    (cut forms 0 None 2))))
-    ;; then indent the right-hand objects by the longest of the left-hand ones.
-    (let [non-comment-forms (list (filter (fn [f] (not (isinstance f Comment)))
-                                          forms))
-          instr (* " " (max (map (fn [f] (len (_repr f)))
-                                (cut non-comment-forms 0 None 2))))]
-      (.join (+ "\n" indent-str)
-             (lfor [a b] (batched non-comment-forms 2)
-                 (+ (grind a :indent-str (_indent indent-str) :size size)
-                    (cut instr (len (_repr a)) None) " "
-                    (grind b :indent-str (+ instr (_indent indent-str)) :size size)))))
+    (_layout-aligned-pairs forms indent-str size)
 
     ;; long and paired - with comment preservation
     pair
-    (let [items (list forms)
-          blocks []
-          pending-comments []
-          i 0]
-      (while (< i (len items))
-        (setv item (get items i))
-        (if (isinstance item Comment)
-            ;; accumulate comments to prepend to next pair
-            (do
-              (.append pending-comments (cut (_repr item) 0 -1))
-              (+= i 1))
-            ;; pair with next non-comment item
-            (do
-              (setv a item)
-              (setv j (+ i 1))
-              ;; skip comments to find the value
-              (while (and (< j (len items))
-                          (isinstance (get items j) Comment))
-                (+= j 1))
-              (when (< j (len items))
-                (setv pair-str (+ (grind a :indent-str (_indent indent-str) :size size)
-                                  "\n\n" (_indent indent-str)
-                                  (grind (get items j) :indent-str (+ "__" (_indent indent-str)) :size size)))
-                ;; prepend pending comments
-                (when pending-comments
-                  (setv comment-lines (.join (+ "\n" (_indent indent-str))
-                                            pending-comments))
-                  (setv pair-str (+ comment-lines "\n" (_indent indent-str)
-                                    pair-str)))
-                (.append blocks pair-str)
-                (setv pending-comments [])
-                (setv i (+ j 1))
-                (continue))
-              ;; no pair found (shouldn't happen in valid code)
-              (.append blocks (grind a :indent-str (_indent indent-str) :size size))
-              (+= i 1))))
-      ;; flush any remaining comments
-      (when pending-comments
-        (.append blocks (.join (+ "\n" (_indent indent-str))
-                               pending-comments)))
-      (.join (+ "\n" indent-str) blocks))
+    (_layout-long-paired forms indent-str size)
 
     ;; short and not paired - just print
     (_is-printable forms :size size)
-    (.join " "
-            (lfor f forms
-                    (grind f :indent-str (_indent indent-str) :size size)))
+    (_layout-inline forms indent-str size)
 
     ;; long and not paired - one on each line
     :else
-    (.join (+ "\n" indent-str)
-           (lfor f forms
-                 (grind f :indent-str (_indent indent-str) :size size)))))
+    (_layout-block forms indent-str size)))
 
 
 ;; * Source code string or Expressions
