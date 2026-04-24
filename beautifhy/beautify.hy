@@ -186,20 +186,20 @@ cond/let/setv pairing.
 ;; * Separator helpers
 ;; -----------------------------------
 
-(defn _section-comment? [form]
+(defn _is-section-comment [form]
   "Is this a section-separating comment (e.g. ;; * or ;; ---)?"
   (and (isinstance form Comment)
        (let [text (_repr form)]
          (or (.startswith text ";; *")
              (.startswith text ";; -")))))
 
-(defn _trailing-comment? [form]
+(defn _is-trailing-comment [form]
   "Is this a trailing (end-of-line) comment? Single-; only."
   (and (isinstance form Comment)
        (.startswith (_repr form) ";")
        (not (.startswith (_repr form) ";;"))))
 
-(defn _is-def-form? [form]
+(defn _is-def-form [form]
   "Is this a defn/defmethod/defclass/defmacro form?"
   (and (isinstance form Expression)
        (> (len form) 0)
@@ -212,21 +212,21 @@ cond/let/setv pairing.
   Trailing comments stay on the same line as the preceding form."
   (cond
     ;; blank line around section comments
-    (or (_section-comment? f)
-        (_section-comment? next-f))
+    (or (_is-section-comment f)
+        (_is-section-comment next-f))
     (+ "\n\n" indent-str " ")
 
     ;; blank line around def-forms (defn, defmethod, defclass, etc.)
-    (or (_is-def-form? f)
-        (_is-def-form? next-f))
+    (or (_is-def-form f)
+        (_is-def-form next-f))
     (+ "\n\n" indent-str " ")
 
     ;; after trailing comment — new line for next form
-    (_trailing-comment? f)
+    (_is-trailing-comment f)
     (+ "\n " indent-str " ")
 
     ;; before trailing comment — same line as current form
-    (_trailing-comment? next-f)
+    (_is-trailing-comment next-f)
     " "
 
     ;; normal line-breaking form
@@ -499,10 +499,10 @@ cond/let/setv pairing.
            (lfor [ix f] (enumerate form-list)
                  (let [next-f (when (< (inc ix) (len form-list))
                                 (get form-list (inc ix)))
-                       f-section (_section-comment? f)
-                       next-section (_section-comment? next-f)
-                       f-def (_is-def-form? f)
-                       next-def (_is-def-form? next-f)
+                       f-section (_is-section-comment f)
+                       next-section (_is-section-comment next-f)
+                       f-def (_is-def-form f)
+                       next-def (_is-def-form next-f)
                        sep (cond
                              ;; between two section comments: just a line break (grouped)
                              (and f-section next-section) "\n"
@@ -517,8 +517,8 @@ cond/let/setv pairing.
                              ;; before a def-form: blank line
                              next-def "\n\n"
                              ;; trailing comment stays on same line as preceding form
-                             (_trailing-comment? f) "\n"
-                             (_trailing-comment? next-f) " "
+                             (_is-trailing-comment f) "\n"
+                             (_is-trailing-comment next-f) " "
                              ;; default
                              :else "\n")]
                    (+ (grind f #** kwargs) sep))))))
