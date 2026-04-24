@@ -172,14 +172,57 @@ special forms.
   False)
 
 (defmethod _breaks-line [#^ Comment form]
-  "Comments always start on their own line."
-  True)
+  "Comments starting with ;; start on their own line.
+  Single-; trailing comments stay on the same line as the preceding form."
+  (.startswith (_repr form) ";;"))
 
 (defmethod _breaks-line [#^ Expression forms]
   "Methods / dotted identifiers have a particular form:
       ([. None Symbol])."
   (not (= (first forms) '.)))
 
+
+;; * Separator helpers
+;; -----------------------------------
+
+(defn _section-comment? [form]
+  "Is this a section-separating comment (e.g. ;; * or ;; ---)?"
+  (and (isinstance form Comment)
+       (let [text (_repr form)]
+         (or (.startswith text ";; *")
+             (.startswith text ";; -")))))
+
+(defn _trailing-comment? [form]
+  "Is this a trailing (end-of-line) comment? Single-; only."
+  (and (isinstance form Comment)
+       (.startswith (_repr form) ";")
+       (not (.startswith (_repr form) ";;"))))
+
+(defn _separator [f next-f indent-str]
+  "Determine the separator after form f, before next-f.
+  Section comments get blank lines before and after.
+  Trailing comments stay on the same line as the preceding form."
+  (cond
+    ;; blank line around section comments
+    (or (_section-comment? f)
+        (_section-comment? next-f))
+    (+ "\n\n" indent-str " ")
+
+    ;; after trailing comment — new line for next form
+    (_trailing-comment? f)
+    (+ "\n " indent-str " ")
+
+    ;; before trailing comment — same line as current form
+    (_trailing-comment? next-f)
+    " "
+
+    ;; normal line-breaking form
+    (_breaks-line f)
+    (+ "\n " indent-str " ")
+
+    ;; inline form
+    :else
+    " "))
 
 ;; * The layout engine
 ;; -----------------------------------
@@ -355,9 +398,26 @@ special forms.
 
 (defmethod grind [#^ Lazy forms * source #** kwargs]
   "This method is for a lazy sequence of Hy forms."
-  (.join "\n"
-         (lfor expression forms
-           (grind expression #** kwargs))))
+  (let [form-list (list forms)]
+    (.join ""
+           (lfor [ix f] (enumerate form-list)
+                 (let [next-f (when (< (+ ix 1) (len form-list))
+                                (get form-list (+ ix 1)))
+                       f-section (_section-comment? f)
+                       next-section (_section-comment? next-f)
+                       sep (cond
+                             ;; between two section comments: just a line break (grouped)
+                             (and f-section next-section) "\n"
+                             ;; after a section comment, before non-section: blank line
+                             f-section "\n\n"
+                             ;; before a section comment, after non-section: blank line
+                             next-section "\n\n"
+                             ;; trailing comment stays on same line as preceding form
+                             (_trailing-comment? f) "\n"
+                             (_trailing-comment? next-f) " "
+                             ;; default
+                             :else "\n")]
+                   (+ (grind f #** kwargs) sep))))))
 
 (defmethod grind [#^ Expression forms * [indent-str ""] [size SIZE] #** kwargs] 
   "This method applies to Hy `Expression` objects
@@ -379,17 +439,17 @@ special forms.
       (not (isinstance (get forms 1) List))
       (not (<= (len forms) 3)))
     (+
-      "\n" indent-str "("
+      indent-str "("
       (.join " "
              (lfor f (cut forms 3)
                    (_repr f)))
       "\n" (_indent indent-str)
       (.join ""
              (lfor [ix f] (enumerate (cut forms 3 None))
-                   ;; Keep Keywords and other special cases with the following form.
-                   (let [sep (cond (= ix (- (len forms) 4)) ""
-                                   (_breaks-line f) (+ "\n " indent-str " ")
-                                   :else " ")]
+                   (let [rest-forms (cut forms 3 None)
+                         next-f (when (< (+ ix 1) (len rest-forms))
+                                  (get rest-forms (+ ix 1)))
+                         sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
       ")")
@@ -408,10 +468,10 @@ special forms.
       "\n" (_indent indent-str)
       (.join ""
              (lfor [ix f] (enumerate (cut forms 3 None))
-                   ;; Keep Keywords and other special cases with the following form.
-                   (let [sep (cond (= ix (- (len forms) 4)) ""
-                                   (_breaks-line f) (+ "\n " indent-str " ")
-                                   :else " ")]
+                   (let [rest-forms (cut forms 3 None)
+                         next-f (when (< (+ ix 1) (len rest-forms))
+                                  (get rest-forms (+ ix 1)))
+                         sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
       ")")
@@ -428,10 +488,10 @@ special forms.
          ;; rest is processed as normal
          (.join ""
                 (lfor [ix f] (enumerate (cut forms 2 None))
-                      ;; Keep Keywords and other special cases with the following form.
-                      (let [sep (cond (is f (last forms)) ""
-                                      (_breaks-line f) (+ "\n " indent-str " ")
-                                      :else " ")]
+                      (let [rest-forms (cut forms 2 None)
+                            next-f (when (< (+ ix 1) (len rest-forms))
+                                     (get rest-forms (+ ix 1)))
+                            sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                         (+ (grind f :indent-str (_indent indent-str) :size size) sep))))
          ")"))
 
@@ -494,10 +554,9 @@ special forms.
       "("
       (.join ""
              (lfor [ix f] (enumerate forms)
-                   ;; Keep Keywords and other special cases with the following form.
-                   (let [sep (cond (= ix (- (len forms) 1)) ""
-                                   (_breaks-line f) (+ "\n " indent-str " ")
-                                   :else " ")]
+                   (let [next-f (when (< (+ ix 1) (len forms))
+                                  (get forms (+ ix 1)))
+                         sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
                      (+ (grind f :indent-str (_indent indent-str) :size size)
                         sep))))
       ")")))
