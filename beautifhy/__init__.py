@@ -49,7 +49,6 @@ def __cli_grind_files():
     if not args.files:
         code = sys.stdin.read()
         print(beautify.grind(code))
-        print()
         return
 
     check_failed = False
@@ -72,12 +71,10 @@ def __cli_grind_files():
                     print(f"unchanged {fname}")
             else:
                 print(formatted)
-                print()
 
         elif fname == "-":
             code = sys.stdin.read()
             print(beautify.grind(code))
-            print()
         else:
             raise ValueError(f"Unrecognised file extension for {fname}.")
 
