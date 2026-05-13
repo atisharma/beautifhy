@@ -95,7 +95,7 @@ cond/let/setv pairing.
     ;; type hints
     (and (= (len forms) 3)
          (= (first forms) 'annotate))
-    f"#^ {(_repr (last forms))} {(_repr (second forms))} "
+    f"#^ {(_repr (last forms))} {(_repr (second forms))}"
 
     ;; quasiquote
     (= (first forms) 'quasiquote)
@@ -133,9 +133,9 @@ cond/let/setv pairing.
 
 (defmethod _is-paired [#^ Symbol symbol #** kwargs]
   "When some symbols are encountered (e.g. `cond`), the next forms go in pairs."
-  ;; There's no point pairing setv, since the reader expands
-  ;; a compound setv statement into individual ones anyway.
-  (in symbol ['cond 'setv 'setx]))
+  ;; There's no point pairing setv/setx, since the reader expands
+  ;; a compound statement into individual ones anyway.
+  (in symbol ['cond]))
 
 (defmethod _takes-paired-list [#^ Object object #** kwargs]
   "When some symbols are encountered, the next form is a paired `List`."
@@ -322,7 +322,7 @@ cond/let/setv pairing.
     (+ "(" (first forms) "\n"
        (_indent indent-str)
        (.join (+ "\n\n" (_indent indent-str)) blocks)
-       "\n" indent-str ")")))
+       ")")))
 
 ;; * The layout engine
 ;; -----------------------------------
@@ -504,6 +504,7 @@ cond/let/setv pairing.
                        f-def (_is-def-form f)
                        next-def (_is-def-form next-f)
                        sep (cond
+                             (is next-f None) ""
                              ;; between two section comments: just a line break (grouped)
                              (and f-section next-section) "\n"
                              ;; after a section comment: blank line
