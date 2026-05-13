@@ -67,8 +67,16 @@ cond/let/setv pairing.
 ;; * Render forms to text
 ;; -----------------------------------------
 
+(defn _indent-col [col]
+  "Add one level of indentation to indent column."
+  (+ col (len INDENT_STR)))
+
+(defn _str-col [col]
+  "Convert an indent column to a string of spaces."
+  (* " " (or col 0)))
+
 (defn _indent [#^ str indent-str]
-  "Add one level of indentation to indent-str."
+  "Add one level of indentation to indent-str string."
   (+ indent-str INDENT_STR))
 
 (defmethod _repr [#^ Object f]
@@ -95,7 +103,7 @@ cond/let/setv pairing.
     ;; type hints
     (and (= (len forms) 3)
          (= (first forms) 'annotate))
-    f"#^ {(_repr (last forms))} {(_repr (second forms))} "
+    f"#^ {(_repr (last forms))} {(_repr (second forms))}"
 
     ;; quasiquote
     (= (first forms) 'quasiquote)
@@ -133,9 +141,9 @@ cond/let/setv pairing.
 
 (defmethod _is-paired [#^ Symbol symbol #** kwargs]
   "When some symbols are encountered (e.g. `cond`), the next forms go in pairs."
-  ;; There's no point pairing setv, since the reader expands
-  ;; a compound setv statement into individual ones anyway.
-  (in symbol ['cond 'setv 'setx]))
+  ;; There's no point pairing setv/setx, since the reader expands
+  ;; a compound statement into individual ones anyway.
+  (in symbol ['cond]))
 
 (defmethod _takes-paired-list [#^ Object object #** kwargs]
   "When some symbols are encountered, the next form is a paired `List`."
@@ -206,81 +214,123 @@ cond/let/setv pairing.
        (isinstance (first form) Symbol)
        (_is-def (first form))))
 
-(defn _separator [f next-f indent-str]
+(defn _separator [f next-f indent-col]
   "Determine the separator after form f, before next-f.
   Section comments and def-forms get blank lines.
   Trailing comments stay on the same line as the preceding form."
-  (cond
-    ;; blank line around section comments
-    (or (_is-section-comment f)
-        (_is-section-comment next-f))
-    (+ "\n\n" indent-str " ")
+  (let [indent-str (_str-col indent-col)]
+    (cond
+      ;; blank line around section comments
+      (or (_is-section-comment f)
+          (_is-section-comment next-f))
+      (+ "\n\n" indent-str " ")
 
-    ;; blank line around def-forms (defn, defmethod, defclass, etc.)
-    (or (_is-def-form f)
-        (_is-def-form next-f))
-    (+ "\n\n" indent-str " ")
+      ;; blank line around def-forms (defn, defmethod, defclass, etc.)
+      (or (_is-def-form f)
+          (_is-def-form next-f))
+      (+ "\n\n" indent-str " ")
 
-    ;; after trailing comment — new line for next form
-    (_is-trailing-comment f)
-    (+ "\n " indent-str " ")
+      ;; after trailing comment — new line for next form
+      (_is-trailing-comment f)
+      (+ "\n " indent-str " ")
 
-    ;; before trailing comment — same line as current form
-    (_is-trailing-comment next-f)
-    " "
+      ;; before trailing comment — same line as current form
+      (_is-trailing-comment next-f)
+      " "
 
-    ;; normal line-breaking form
-    (_breaks-line f)
-    (+ "\n " indent-str " ")
+      ;; normal line-breaking form
+      (_breaks-line f)
+      (+ "\n " indent-str " ")
 
-    ;; inline form
-    :else
-    " "))
+      ;; inline form
+      :else
+      " ")))
 
-(defn _grind-with-separator [forms indent-str size #** kwargs]
-  "Render a sequence of forms with separator-based spacing."
-  (.join ""
-         (lfor [ix f] (enumerate forms)
-               (let [next-f (when (< (inc ix) (len forms))
-                              (get forms (inc ix)))
-                     sep (if (is-not next-f None) (_separator f next-f indent-str) "")]
-                 (+ (grind f :indent-str (_indent indent-str) :size size #** kwargs)
-                    sep)))))
+(defn _last-line-len [text]
+  "Return the length of the last line in text (column after it)."
+  (let [nl (.rfind text "\n")]
+    (if (= nl -1)
+        (len text)
+        (- (len text) nl 1))))
 
-(defn _grind-def-form [forms indent-str size]
+(defn _grind-with-separator [forms indent-col size #** kwargs]
+  "Render a sequence of forms with separator-based spacing.
+  Tracks the current column on the line to compute correct
+  opener-column indentation for inline children."
+  (let [parts []
+        n-forms (len forms)
+        current-col (inc indent-col)  ;; column past the opening (
+        indent-str (_str-col indent-col)
+        prev-sep ""]  ;; track the separator before the current form
+    (for [ix (range n-forms)]
+      (let [f (get forms ix)
+            next-f (when (< (inc ix) n-forms)
+                     (get forms (inc ix)))
+            ;; sep is the separator AFTER f, before next-f
+            sep (if (is-not next-f None)
+                  (_separator f next-f indent-col)
+                  "")
+            ;; child-col depends on prev-sep (separator before f)
+            ;; If prev form ended with newline, f starts at standard indent
+            ;; If prev form was inline, f starts at current column
+            child-col (if (.startswith prev-sep "\n")
+                        (_indent-col indent-col)   ;; new line: standard indent
+                        current-col)]               ;; inline: actual opener column
+        (.append parts
+                 (+ (grind f :indent-col child-col :size size #** kwargs)
+                    sep))
+        ;; Update current-col for next child
+        (let [child-out (first (cut parts -1 None))]
+          (setv current-col
+                (if (in "\n" child-out)
+                    (let [child-nl (.rfind child-out "\n")
+                          after-child (cut child-out (inc child-nl) None)]
+                      (if (in "\n" after-child)
+                          (_last-line-len after-child)
+                          (len after-child)))
+                    (+ current-col (len child-out)))))
+        ;; Remember this separator for the next iteration
+        (setv prev-sep sep)))
+    (.join "" parts)))
+
+(defn _grind-def-form [forms indent-col size]
   "Render def-forms: inline header, separator body."
-  (+
-    indent-str "("
-    (.join " "
-           (lfor f (cut forms 3)
-                 (_repr f)))
-    "\n" (_indent indent-str)
-    (_grind-with-separator (cut forms 3 None) indent-str size)
-    ")"))
+  (let [indent-str (_str-col indent-col)]
+    (+
+      indent-str "("
+      (.join " "
+             (lfor f (cut forms 3)
+                   (_repr f)))
+      "\n" (_indent indent-str)
+      (_grind-with-separator (cut forms 3 None) indent-col size)
+      ")")))
 
-(defn _grind-comprehension [forms indent-str size]
+(defn _grind-comprehension [forms indent-col size]
   "Render comprehensions: inline header, separator body."
-  (+
-    "("
-    (.join " "
-           (lfor f (cut forms 3)
-                 (_repr f)))
-    "\n" (_indent indent-str)
-    (_grind-with-separator (cut forms 3 None) indent-str size)
-    ")"))
+  (let [indent-str (_str-col indent-col)]
+    (+
+      "("
+      (.join " "
+             (lfor f (cut forms 3)
+                   (_repr f)))
+      "\n" (_indent indent-str)
+      (_grind-with-separator (cut forms 3 None) indent-col size)
+      ")")))
 
-(defn _grind-paired-list [forms indent-str size]
+(defn _grind-paired-list [forms indent-col size]
   "Render for/let/with forms: paired list, separator body."
-  (let [instr (_indent (* " " (len (first forms))))]
+  (let [indent-str (_str-col indent-col)
+        instr (* " " (len (first forms)))]
     (+ "(" (first forms) " "
-       (grind (second forms) :indent-str (+ instr indent-str) :size size :pair True)
+       (grind (second forms) :indent-col (+ indent-col 1 (len instr)) :size size :pair True)
        "\n" (_indent indent-str)
-       (_grind-with-separator (cut forms 2 None) indent-str size)
+       (_grind-with-separator (cut forms 2 None) indent-col size)
        ")")))
 
-(defn _grind-paired [forms indent-str size]
+(defn _grind-paired [forms indent-col size]
   "Render cond/setv forms: comment-aware pairing with blank lines."
-  (let [items (rest forms)
+  (let [indent-str (_str-col indent-col)
+        items (rest forms)
         blocks []
         pending-comments []
         i 0]
@@ -300,9 +350,9 @@ cond/let/setv pairing.
                         (isinstance (get items j) Comment))
               (+= j 1))
             (when (< j (len items))
-              (setv pair-str (+ (grind a :indent-str (_indent indent-str) :size size)
+              (setv pair-str (+ (grind a :indent-col (_indent-col indent-col) :size size)
                                 "\n" (_indent indent-str)
-                                (grind (get items j) :indent-str (_indent indent-str) :size size)))
+                                (grind (get items j) :indent-col (_indent-col indent-col) :size size)))
               ;; prepend pending comments
               (when pending-comments
                 (setv comment-lines (.join (+ "\n" (_indent indent-str))
@@ -313,7 +363,7 @@ cond/let/setv pairing.
               (setv i (inc j))
               (continue))
             ;; no pair found (shouldn't happen in valid code)
-            (.append blocks (grind a :indent-str (_indent indent-str) :size size))
+            (.append blocks (grind a :indent-col (_indent-col indent-col) :size size))
             (+= i 1))))
     ;; flush any remaining comments
     (when pending-comments
@@ -322,7 +372,7 @@ cond/let/setv pairing.
     (+ "(" (first forms) "\n"
        (_indent indent-str)
        (.join (+ "\n\n" (_indent indent-str)) blocks)
-       "\n" indent-str ")")))
+       ")")))
 
 ;; * The layout engine
 ;; -----------------------------------
@@ -504,6 +554,7 @@ cond/let/setv pairing.
                        f-def (_is-def-form f)
                        next-def (_is-def-form next-f)
                        sep (cond
+                             (is next-f None) ""
                              ;; between two section comments: just a line break (grouped)
                              (and f-section next-section) "\n"
                              ;; after a section comment: blank line
@@ -523,7 +574,7 @@ cond/let/setv pairing.
                              :else "\n")]
                    (+ (grind f #** kwargs) sep))))))
 
-(defmethod grind [#^ Expression forms * [indent-str ""] [size SIZE] #** kwargs]
+(defmethod grind [#^ Expression forms * [indent-col 0] [size SIZE] #** kwargs]
   "This method applies to Hy `Expression` objects
   which are parenthesized sequences of Hy forms."
   (cond
@@ -537,21 +588,21 @@ cond/let/setv pairing.
       (_is-printable (cut forms 3))
       (not (isinstance (get forms 1) List))
       (not (<= (len forms) 3)))
-    (_grind-def-form forms indent-str size)
+    (_grind-def-form forms indent-col size)
 
     ;; comprehensions: inline header, separator body
     (and
       (_is-comprehension (first forms))
       (_is-printable (cut forms 3)))
-    (_grind-comprehension forms indent-str size)
+    (_grind-comprehension forms indent-col size)
 
     ;; for/let/with: paired list, separator body
     (_takes-paired-list (first forms))
-    (_grind-paired-list forms indent-str size)
+    (_grind-paired-list forms indent-col size)
 
     ;; cond/setv: comment-aware pairing
     (_is-paired (first forms))
-    (_grind-paired forms indent-str size)
+    (_grind-paired forms indent-col size)
 
     ;; short enough to print inline
     (_is-printable forms :size size)
@@ -559,13 +610,13 @@ cond/let/setv pairing.
 
     ;; default: separator body
     :else
-    (+ "(" (_grind-with-separator forms indent-str size) ")")))
+    (+ "(" (_grind-with-separator forms indent-col size) ")")))
 
 
 ;; * Atoms, Strings
 ;; -----------------------------------
 
-(defmethod grind [#^ String s * [indent-str ""] [size SIZE] #** kwargs]
+(defmethod grind [#^ String s * [indent-col 0] [size SIZE] #** kwargs]
   "This method applies to Hy `String`."
   (cond
     ;; short, print as is on the same line
@@ -593,39 +644,43 @@ cond/let/setv pairing.
 ;; * Sequences
 ;; -----------------------------------
 
-(defmethod grind [#^ Dict expr * [indent-str ""] [size SIZE] #** kwargs] 
+(defmethod grind [#^ Dict expr * [indent-col 0] [size SIZE] #** kwargs] 
   "This is the implementation for `Dict`.
   Key-value pairs are grouped."
-  (if (_is-printable expr :size size)
-      (_repr expr)
-      (+ "{"
-         (_layout expr :indent-str (+ " " indent-str) :size size :pair True)
-         "}")))
+  (let [indent-str (_str-col indent-col)]
+    (if (_is-printable expr :size size)
+        (_repr expr)
+        (+ "{"
+           (_layout expr :indent-str (+ " " indent-str) :size size :pair True)
+           "}"))))
 
-(defmethod grind [#^ List expr * [indent-str ""] [size SIZE] [pair False] #** kwargs] 
+(defmethod grind [#^ List expr * [indent-col 0] [size SIZE] [pair False] #** kwargs] 
   "This is the implementation for `List`.
   The `pair` keyword determines whether the list's items presented in pairs."
-  (if (and (not pair) (_is-printable expr :size size))
-      (_repr expr)
-      (+ "["
-         (_layout expr :indent-str (+ " " indent-str) :size size :pair pair)
-         "]")))
+  (let [indent-str (_str-col indent-col)]
+    (if (and (not pair) (_is-printable expr :size size))
+        (_repr expr)
+        (+ "["
+           (_layout expr :indent-str (+ " " indent-str) :size size :pair pair)
+           "]"))))
 
-(defmethod grind [#^ Tuple expr * [indent-str ""] [size SIZE] #** kwargs] 
+(defmethod grind [#^ Tuple expr * [indent-col 0] [size SIZE] #** kwargs] 
   "This is the implementation for `Tuple`."
-  (if (_is-printable expr :size size)
-      (_repr expr)
-      (+ "#("
-         (_layout expr :indent-str (+ "  " indent-str) :size size :pair False)
-         ")")))
+  (let [indent-str (_str-col indent-col)]
+    (if (_is-printable expr :size size)
+        (_repr expr)
+        (+ "#("
+           (_layout expr :indent-str (+ "  " indent-str) :size size :pair False)
+           ")"))))
 
-(defmethod grind [#^ Set expr * [indent-str ""] [size SIZE] #** kwargs] 
+(defmethod grind [#^ Set expr * [indent-col 0] [size SIZE] #** kwargs] 
   "This is the implementation for `Set`."
-  (if (_is-printable expr :size size)
-      (_repr expr)
-      (+ "#{"
-         (_layout expr :indent-str (+ "  " indent-str) :size size :pair False)
-         "}")))
+  (let [indent-str (_str-col indent-col)]
+    (if (_is-printable expr :size size)
+        (_repr expr)
+        (+ "#{"
+           (_layout expr :indent-str (+ "  " indent-str) :size size :pair False)
+           "}"))))
 
 
 ;; * The entrypoints
